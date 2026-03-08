@@ -19,6 +19,7 @@ export class AuthService implements OnModuleInit {
     this.auth = betterAuth({
       secret: this.configService.get<string>('auth.secret'),
       baseURL: this.configService.get<string>('auth.url'),
+      basePath: '/auth',
 
       database: drizzleAdapter(this.db, {
         provider: 'pg',
