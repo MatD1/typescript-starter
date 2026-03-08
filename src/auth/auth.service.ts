@@ -16,10 +16,21 @@ export class AuthService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
+    const baseURL =
+      this.configService.get<string>('auth.url') ?? 'http://localhost:3000';
+    const extraOrigins = (process.env.ALLOWED_ORIGINS ?? '').split(',').filter(Boolean);
+
     this.auth = betterAuth({
       secret: this.configService.get<string>('auth.secret'),
-      baseURL: this.configService.get<string>('auth.url'),
+      baseURL,
       basePath: '/auth',
+
+      // Allow any origin — this is a REST API protected by API keys.
+      // CSRF is not a concern here; browser-cookie flows aren't the primary use case.
+      trustedOrigins: [baseURL, 'http://localhost:3000', ...extraOrigins],
+      advanced: {
+        disableCSRFCheck: true,
+      },
 
       database: drizzleAdapter(this.db, {
         provider: 'pg',
