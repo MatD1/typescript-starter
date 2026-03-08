@@ -39,7 +39,7 @@ export class TransportService {
     feedType: GtfsRtFeedType,
     mode: TransportMode,
   ): Promise<Buffer> {
-    const url = `${this.baseUrl}/v2/gtfs/realtime/${feedType}/${mode}`;
+    const url = `${this.baseUrl}/v2/gtfs/${feedType}/${mode}`;
     const config: AxiosRequestConfig = {
       headers: { ...this.authHeaders, Accept: 'application/x-google-protobuf' },
       responseType: 'arraybuffer',
