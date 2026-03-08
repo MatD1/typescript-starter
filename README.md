@@ -81,7 +81,7 @@ POST /auth/sign-in/email
 ### Step 2 — Create an API Key
 
 ```bash
-POST /api/v1/auth/api-keys
+POST /api/v1/api-keys
 Authorization: Bearer <session-token>
 { "name": "my-app-key" }
 # Returns { "key": "nsw_...", ... }
@@ -151,9 +151,9 @@ All endpoints (except `/auth/*`) are under `/api/v1` and require `X-API-Key`.
 ### API Key Management
 | Method | Path | Description |
 |---|---|---|
-| POST | `/auth/api-keys` | Create a new API key |
-| GET | `/auth/api-keys` | List your API keys |
-| DELETE | `/auth/api-keys/:id` | Revoke an API key |
+| POST | `/api/v1/api-keys` | Create a new API key |
+| GET | `/api/v1/api-keys` | List your API keys |
+| DELETE | `/api/v1/api-keys/:id` | Revoke an API key |
 
 ---
 

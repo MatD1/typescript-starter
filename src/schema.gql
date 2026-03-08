@@ -1,0 +1,196 @@
+# ------------------------------------------------------
+# THIS FILE WAS AUTOMATICALLY GENERATED (DO NOT MODIFY)
+# ------------------------------------------------------
+
+type ActivePeriodObject {
+  end: Int
+  start: Int
+}
+
+type DepartureObject {
+  departureTimeEstimated: String
+  departureTimePlanned: String
+  destination: String
+  lineName: String
+  platform: String
+  stopId: String
+  stopName: String
+  transportMode: String
+}
+
+type DisruptionObject {
+  activePeriods: [ActivePeriodObject!]!
+  cause: String
+  descriptionText: String
+  effect: String
+  headerText: String
+  id: String!
+  informedEntities: [InformedEntityObject!]!
+  mode: String!
+  severity: String
+  url: String
+}
+
+type GtfsRouteObject {
+  mode: String
+  routeColor: String
+  routeId: String!
+  routeLongName: String
+  routeShortName: String
+  routeType: Int
+}
+
+type GtfsStopObject {
+  lat: Float
+  lon: Float
+  mode: String
+  stopCode: String
+  stopId: String!
+  stopName: String!
+}
+
+type GtfsTripObject {
+  directionId: Int
+  mode: String
+  routeId: String
+  serviceId: String
+  tripHeadsign: String
+  tripId: String!
+}
+
+type InformedEntityObject {
+  agencyId: String
+  routeId: String
+  stopId: String
+  tripId: String
+}
+
+type LegObject {
+  arrivalTimeEstimated: String
+  arrivalTimePlanned: String
+  departureTimeEstimated: String
+  departureTimePlanned: String
+  dest: LocationObject
+  destination: String
+  duration: Int
+  lineName: String
+  origin: LocationObject
+  transportation: String
+}
+
+type LocationObject {
+  id: String
+  lat: Float
+  lon: Float
+  name: String
+  type: String
+}
+
+type Query {
+  """Get departure board for a stop."""
+  departures(itdDate: String, itdTime: String, stopId: String, stopName: String): [DepartureObject!]!
+
+  """Get current service disruptions and alerts."""
+  disruptions(effect: String, mode: String): [DisruptionObject!]!
+
+  """Search for stops and stations by name."""
+  findStops(query: String!, type: String): [StopObject!]!
+
+  """List GTFS static routes."""
+  gtfsRoutes(limit: Float, mode: String): [GtfsRouteObject!]!
+
+  """List GTFS static stops."""
+  gtfsStops(limit: Float, mode: String): [GtfsStopObject!]!
+
+  """List GTFS static trips."""
+  gtfsTrips(limit: Float, routeId: String): [GtfsTripObject!]!
+
+  """Find stations near a coordinate."""
+  nearbyStations(lat: Float!, limit: Float, lon: Float!, radius: Float): [StationObject!]!
+
+  """Find stops near a coordinate."""
+  nearbyStops(lat: Float!, lon: Float!, radius: Float): [StopObject!]!
+
+  """Plan a journey between two locations."""
+  planTrip(calcNumberOfTrips: Float, destCoord: String, destId: String, destName: String, itdDate: String, itdTime: String, originCoord: String, originId: String, originName: String): [TripResultObject!]!
+
+  """Search for stations/stops by name."""
+  searchStations(limit: Float, query: String!): [StationObject!]!
+
+  """Get a station by stop ID."""
+  stationById(stopId: String!): StationObject
+
+  """Get live trip updates. Optionally filter by transport mode."""
+  tripUpdates(mode: String): [TripUpdateObject!]!
+
+  """Get live vehicle positions. Optionally filter by transport mode."""
+  vehiclePositions(mode: String): [VehiclePositionObject!]!
+}
+
+type StationObject {
+  lat: Float
+  locationType: Int
+  lon: Float
+  mode: String
+  parentStation: String
+  platformCode: String
+  stopCode: String
+  stopId: String!
+  stopName: String!
+  wheelchairBoarding: Int
+}
+
+type StopObject {
+  disassembledName: String
+  id: String
+  lat: Float
+  lon: Float
+  name: String
+  transportMode: String
+  type: String
+}
+
+type StopTimeUpdateObject {
+  arrivalDelay: Int
+  arrivalTime: Int
+  departureDelay: Int
+  departureTime: Int
+  scheduleRelationship: String
+  stopId: String
+  stopSequence: Int
+}
+
+type TripResultObject {
+  duration: Int
+  interchanges: Int
+  legs: [LegObject!]!
+}
+
+type TripUpdateObject {
+  directionId: Int
+  mode: String!
+  routeId: String
+  scheduleRelationship: String
+  startDate: String
+  startTime: String
+  stopTimeUpdates: [StopTimeUpdateObject!]!
+  timestamp: Int
+  tripId: String!
+  vehicleId: String
+}
+
+type VehiclePositionObject {
+  bearing: Float
+  congestionLevel: String
+  currentStatus: String
+  currentStopId: String
+  latitude: Float!
+  longitude: Float!
+  mode: String!
+  occupancyStatus: String
+  routeId: String
+  speed: Float
+  timestamp: Int
+  tripId: String
+  vehicleId: String!
+}

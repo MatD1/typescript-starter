@@ -28,7 +28,7 @@ class CreateApiKeyDto {
 
 @Public()
 @ApiTags('auth')
-@Controller('auth/api-keys')
+@Controller('api-keys')
 export class ApiKeyController {
   constructor(private readonly apiKeyService: ApiKeyService) {}
 
