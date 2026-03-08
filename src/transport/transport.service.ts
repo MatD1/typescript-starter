@@ -63,9 +63,9 @@ export class TransportService {
   /**
    * Builds the correct NSW Open Data URL for a GTFS-RT feed.
    *
-   * Trip-updates use a version-split endpoint:
-   *   v2/gtfs/realtime/tripupdates/{mode}  — sydneytrains, metro, lightrail
-   *   v1/gtfs/realtime/tripupdates/{mode}  — buses, ferries, nswtrains, intercity
+   * Trip-updates use a version-split endpoint (mode is the final segment):
+   *   v2/gtfs/realtime/{mode}  — sydneytrains, metro, lightrail
+   *   v1/gtfs/realtime/{mode}  — buses, ferries, nswtrains, intercity
    *
    * Vehicle positions and alerts use the v2 non-realtime path (no version split):
    *   v2/gtfs/{feedType}/{mode}
@@ -73,7 +73,7 @@ export class TransportService {
   buildGtfsRtUrl(feedType: GtfsRtFeedType, mode: TransportMode): string {
     if (feedType === 'tripupdates') {
       const version = TRIP_UPDATES_V2_MODES.has(mode) ? 'v2' : 'v1';
-      return `${this.baseUrl}/${version}/gtfs/realtime/tripupdates/${mode}`;
+      return `${this.baseUrl}/${version}/gtfs/realtime/${mode}`;
     }
     return `${this.baseUrl}/v2/gtfs/${feedType}/${mode}`;
   }

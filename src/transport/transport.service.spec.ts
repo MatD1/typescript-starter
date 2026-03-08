@@ -29,11 +29,11 @@ describe('TransportService.buildGtfsRtUrl', () => {
   // ── Trip updates: v2 modes ─────────────────────────────────────────────────
 
   it.each(['sydneytrains', 'metro', 'lightrail'] as const)(
-    'tripupdates/%s → v2/gtfs/realtime/tripupdates path',
+    'tripupdates/%s → v2/gtfs/realtime/{mode} path',
     (mode) => {
       const url = service.buildGtfsRtUrl('tripupdates', mode);
       expect(url).toBe(
-        `https://api.transport.nsw.gov.au/v2/gtfs/realtime/tripupdates/${mode}`,
+        `https://api.transport.nsw.gov.au/v2/gtfs/realtime/${mode}`,
       );
     },
   );
@@ -41,11 +41,11 @@ describe('TransportService.buildGtfsRtUrl', () => {
   // ── Trip updates: v1 modes ─────────────────────────────────────────────────
 
   it.each(['buses', 'ferries', 'nswtrains', 'intercity'] as const)(
-    'tripupdates/%s → v1/gtfs/realtime/tripupdates path',
+    'tripupdates/%s → v1/gtfs/realtime/{mode} path',
     (mode) => {
       const url = service.buildGtfsRtUrl('tripupdates', mode);
       expect(url).toBe(
-        `https://api.transport.nsw.gov.au/v1/gtfs/realtime/tripupdates/${mode}`,
+        `https://api.transport.nsw.gov.au/v1/gtfs/realtime/${mode}`,
       );
     },
   );
