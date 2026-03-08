@@ -1,10 +1,28 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import type { Request, Response, NextFunction } from 'express';
+import { json, urlencoded } from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // Disable NestJS's built-in body parser so better-auth can read the raw
+  // request body on /auth/* routes via its own toNodeHandler.
+  const app = await NestFactory.create(AppModule, { bodyParser: false });
+
+  const jsonParser = json();
+  const urlencodedParser = urlencoded({ extended: true });
+
+  // Apply body parsers to every route EXCEPT /auth/* — better-auth parses
+  // its own body internally and will fail if Express already consumed the stream.
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith('/auth/')) return next();
+    return jsonParser(req, res, next);
+  });
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    if (req.path.startsWith('/auth/')) return next();
+    return urlencodedParser(req, res, next);
+  });
 
   app.setGlobalPrefix('api/v1', {
     exclude: ['/auth/(.*)', '/graphql'],
