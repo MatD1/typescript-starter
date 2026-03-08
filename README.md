@@ -1,98 +1,241 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# NSW Transport API
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+A fully-functional **GraphQL + REST** wrapper for the [NSW Open Data Transport](https://opendata.transport.nsw.gov.au/) system. Built with **NestJS**, it covers all transport modes (Sydney Trains, Metro, Buses, Ferries, Light Rail, Intercity, NSW Trains) and provides live vehicle positions, trip planning, departure boards, station search, and service disruptions — all behind a unified, authenticated API.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Features
 
-## Description
+| Category | Capability |
+|---|---|
+| **Auth** | `better-auth` email/password + Supabase SSO JWT exchange |
+| **API Keys** | Create, list, revoke per-user API keys; all transport endpoints require `X-API-Key` |
+| **Realtime** | Live vehicle positions & trip updates (GTFS-RT protobuf, all modes) |
+| **Disruptions** | Service alerts from GTFS-RT alerts feed |
+| **Trip Planner** | Journey planning, departure monitor, stop finder, coordinate search |
+| **Stations** | Stop search by name, lookup by ID, nearby stops by lat/lon |
+| **GTFS Static** | Timetable data (routes, stops, trips, calendars) ingested nightly at 3 AM |
+| **Caching** | Valkey/Redis-backed with per-resource TTLs (15 s to 24 h) |
+| **Docs** | Swagger UI at `/api/docs` · GraphQL Playground at `/graphql` |
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Transport Modes
 
-## Project setup
+`sydneytrains` · `intercity` · `buses` · `nswtrains` · `ferries` · `metro` · `lightrail`
 
-```bash
-$ npm install
-```
+---
 
-## Compile and run the project
+## Quick Start
 
-```bash
-# development
-$ npm run start
+### Prerequisites
 
-# watch mode
-$ npm run start:dev
+- Node.js >= 20
+- PostgreSQL database
+- Valkey / Redis instance
 
-# production mode
-$ npm run start:prod
-```
-
-## Run tests
+### 1. Install dependencies
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm install
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### 2. Configure environment
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+cp .env.example .env
+# Edit .env with your values
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### 3. Run database migrations
 
-## Resources
+```bash
+npm run db:generate   # Generate migration files from schema
+npm run db:migrate    # Apply migrations
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+### 4. Start the server
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```bash
+npm run start:dev     # Development (watch mode)
+npm run build && npm run start:prod  # Production
+```
 
-## Support
+The API will be available at:
+- **REST**: `http://localhost:3000/api/v1`
+- **GraphQL**: `http://localhost:3000/graphql`
+- **Swagger UI**: `http://localhost:3000/api/docs`
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+---
 
-## Stay in touch
+## Authentication
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+### Step 1 — Register / Login
+
+```bash
+# Register
+POST /auth/sign-up/email
+{ "email": "user@example.com", "password": "secret", "name": "My Name" }
+
+# Login — returns { "token": "<session-token>", ... }
+POST /auth/sign-in/email
+{ "email": "user@example.com", "password": "secret" }
+```
+
+### Step 2 — Create an API Key
+
+```bash
+POST /api/v1/auth/api-keys
+Authorization: Bearer <session-token>
+{ "name": "my-app-key" }
+# Returns { "key": "nsw_...", ... }
+```
+
+### Step 3 — Call Transport Endpoints
+
+```bash
+GET /api/v1/realtime/vehicles?mode=sydneytrains
+X-API-Key: nsw_...
+```
+
+Alternatively pass it as `Authorization: Bearer nsw_...`.
+
+### Supabase SSO
+
+```bash
+POST /auth/supabase/exchange
+Authorization: Bearer <supabase-jwt>
+# Returns { "token": "<better-auth-session-token>", ... }
+```
+
+---
+
+## REST API Reference
+
+All endpoints (except `/auth/*`) are under `/api/v1` and require `X-API-Key`.
+
+### Realtime
+| Method | Path | Description |
+|---|---|---|
+| GET | `/realtime/vehicles` | Live vehicle positions (all modes, or `?mode=`) |
+| GET | `/realtime/vehicles/:mode` | Positions for a specific mode |
+| GET | `/realtime/trip-updates` | Active trip updates |
+| GET | `/realtime/trip-updates/:mode` | Trip updates for a specific mode |
+
+### Disruptions
+| Method | Path | Description |
+|---|---|---|
+| GET | `/disruptions` | All active service alerts |
+| GET | `/disruptions/:mode` | Alerts for a specific mode |
+
+### Trip Planner
+| Method | Path | Description |
+|---|---|---|
+| GET | `/trip-planner/plan` | Plan a journey (`?from=&to=&time=`) |
+| GET | `/trip-planner/departures` | Departure board for a stop |
+| GET | `/trip-planner/stop-finder` | Search stops by name |
+| GET | `/trip-planner/coord` | Stops near coordinates |
+
+### Stations
+| Method | Path | Description |
+|---|---|---|
+| GET | `/stations/search` | Search stations by name (`?q=`) |
+| GET | `/stations/:stopId` | Lookup station by GTFS stop ID |
+| GET | `/stations/nearby` | Nearby stops (`?lat=&lon=&radius=`) |
+
+### GTFS Static
+| Method | Path | Description |
+|---|---|---|
+| GET | `/gtfs-static/routes` | All routes (`?mode=`) |
+| GET | `/gtfs-static/stops` | All stops (`?mode=`) |
+| GET | `/gtfs-static/trips` | Trips (`?routeId=`) |
+| GET | `/gtfs-static/calendar` | Service calendars |
+| POST | `/gtfs-static/ingest/:mode` | Trigger GTFS ingest for a mode |
+
+### API Key Management
+| Method | Path | Description |
+|---|---|---|
+| POST | `/auth/api-keys` | Create a new API key |
+| GET | `/auth/api-keys` | List your API keys |
+| DELETE | `/auth/api-keys/:id` | Revoke an API key |
+
+---
+
+## GraphQL
+
+The playground is at `/graphql`. All queries require the `X-API-Key` header.
+
+```graphql
+query {
+  vehiclePositions(mode: "sydneytrains") {
+    vehicleId
+    routeId
+    latitude
+    longitude
+    speed
+    timestamp
+  }
+}
+```
+
+---
+
+## Environment Variables
+
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `REDIS_URL` | Valkey/Redis connection string |
+| `NSW_TRANSPORT_API_KEY` | NSW Open Data API token |
+| `NSW_TRANSPORT_BASE_URL` | NSW API base URL (`https://api.transport.nsw.gov.au`) |
+| `PORT` | Server port (default: `3000`) |
+| `BETTER_AUTH_SECRET` | Secret for better-auth token signing |
+| `BETTER_AUTH_URL` | Public URL of this server |
+| `SUPABASE_URL` | Your Supabase project URL |
+| `SUPABASE_JWT_SECRET` | Supabase JWT secret (from project settings) |
+| `ALLOWED_ORIGINS` | Comma-separated CORS origins |
+
+---
+
+## Database Scripts
+
+```bash
+npm run db:generate   # Generate Drizzle migration files from schema changes
+npm run db:migrate    # Apply pending migrations
+npm run db:push       # Push schema directly (dev only)
+npm run db:studio     # Open Drizzle Studio (DB GUI)
+```
+
+---
+
+## Caching TTLs
+
+| Resource | TTL |
+|---|---|
+| Vehicle positions | 15 seconds |
+| Trip updates / departures | 30 seconds |
+| Disruptions / alerts | 5 minutes |
+| Trip plans | 5 minutes |
+| Stop searches | 1 hour |
+| GTFS static queries | 24 hours |
+
+---
+
+## GTFS Static Ingestion
+
+Static GTFS data is stored in PostgreSQL and refreshed nightly at **3:00 AM**. Trigger manually:
+
+```bash
+POST /api/v1/gtfs-static/ingest/sydneytrains
+X-API-Key: nsw_...
+```
+
+---
+
+## Running Tests
+
+```bash
+npm run test          # Unit tests
+npm run test:e2e      # e2e tests (requires running DB + Redis)
+npm run test:cov      # Coverage report
+```
 
 ## License
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+MIT

@@ -1,0 +1,40 @@
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Post,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { SupabaseAuthService } from './supabase-auth.service';
+import { Public } from '../common/decorators/public.decorator';
+import { IsString } from 'class-validator';
+
+class SupabaseExchangeDto {
+  @IsString()
+  token!: string;
+}
+
+@Public()
+@ApiTags('auth')
+@Controller('auth/supabase')
+export class SupabaseAuthController {
+  constructor(private readonly supabaseAuthService: SupabaseAuthService) {}
+
+  @Post('exchange')
+  @ApiOperation({
+    summary: 'Exchange a Supabase JWT for a better-auth session token',
+    description:
+      'Verifies the Supabase JWT, upserts the user in our database, and returns a better-auth session token that can be used to create API keys.',
+  })
+  async exchange(@Body() dto: SupabaseExchangeDto) {
+    if (!dto.token) throw new BadRequestException('token is required');
+    try {
+      return await this.supabaseAuthService.exchangeSupabaseToken(dto.token);
+    } catch (err) {
+      throw new UnauthorizedException(
+        err instanceof Error ? err.message : 'Invalid Supabase token',
+      );
+    }
+  }
+}

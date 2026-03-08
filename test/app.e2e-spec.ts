@@ -4,7 +4,7 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 
-describe('AppController (e2e)', () => {
+describe('NSW Transport API (e2e)', () => {
   let app: INestApplication<App>;
 
   beforeAll(async () => {
@@ -20,10 +20,9 @@ describe('AppController (e2e)', () => {
     await app.close();
   });
 
-  it('/ (GET)', () => {
+  it('/api/v1/realtime/vehicles (GET) should require an API key', () => {
     return request(app.getHttpServer())
-      .get('/')
-      .expect(200)
-      .expect('Hello World!');
+      .get('/api/v1/realtime/vehicles')
+      .expect(401);
   });
 });
