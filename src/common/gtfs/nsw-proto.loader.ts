@@ -1,7 +1,38 @@
 import * as protobuf from 'protobufjs';
 import * as path from 'path';
+import * as fs from 'fs';
+
+const PROTO_FILENAME = 'gtfs-realtime_1007_extension.proto';
 
 let rootCache: protobuf.Root | null = null;
+
+/**
+ * Resolves the proto file path, trying several locations to handle both
+ * development (ts-node) and production (compiled) environments.
+ *
+ * Because tsconfig.build.json lacks an explicit rootDir, TypeScript infers
+ * the project root as rootDir (due to drizzle.config.ts at root level).
+ * This means compiled output lands in dist/src/... while nest-cli assets
+ * copy to dist/common/... — so we try both plus the raw src/ path.
+ */
+function resolveProtoPath(): string {
+  const candidates = [
+    // Compiled output location (dist/src/common/gtfs/ when rootDir = project root)
+    path.join(__dirname, PROTO_FILENAME),
+    // nest-cli assets copy target (dist/common/gtfs/ relative to project)
+    path.join(process.cwd(), 'dist', 'common', 'gtfs', PROTO_FILENAME),
+    // Source tree (ts-node / local dev without compilation)
+    path.join(process.cwd(), 'src', 'common', 'gtfs', PROTO_FILENAME),
+  ];
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  throw new Error(
+    `Cannot locate GTFS-RT proto file. Searched:\n${candidates.join('\n')}`,
+  );
+}
 
 /**
  * Lazily loads the TfNSW GTFS-RT extension proto (field 1007) and caches
@@ -9,7 +40,7 @@ let rootCache: protobuf.Root | null = null;
  */
 async function getNswProtoRoot(): Promise<protobuf.Root> {
   if (rootCache) return rootCache;
-  const protoPath = path.join(__dirname, 'gtfs-realtime_1007_extension.proto');
+  const protoPath = resolveProtoPath();
   rootCache = await protobuf.load(protoPath);
   return rootCache;
 }
