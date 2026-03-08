@@ -1,4 +1,5 @@
 import { Field, Int, ObjectType } from '@nestjs/graphql';
+import { CarriageDescriptorObject } from './carriage.object';
 
 @ObjectType()
 export class StopTimeUpdateObject {
@@ -22,6 +23,15 @@ export class StopTimeUpdateObject {
 
   @Field({ nullable: true })
   scheduleRelationship?: string;
+
+  @Field({ nullable: true, description: 'Occupancy status at this stop departure' })
+  departureOccupancyStatus?: string;
+
+  @Field(() => [CarriageDescriptorObject], {
+    nullable: true,
+    description: 'Predictive per-carriage occupancy at this stop (TfNSW extension 1007)',
+  })
+  carriagePredictiveOccupancy?: CarriageDescriptorObject[];
 }
 
 @ObjectType()
@@ -35,6 +45,9 @@ export class TripUpdateObject {
   @Field({ nullable: true })
   vehicleId?: string;
 
+  @Field({ nullable: true, description: 'Vehicle label / set number' })
+  vehicleLabel?: string;
+
   @Field(() => Int, { nullable: true })
   directionId?: number;
 
@@ -46,6 +59,9 @@ export class TripUpdateObject {
 
   @Field({ nullable: true })
   scheduleRelationship?: string;
+
+  @Field(() => Int, { nullable: true, description: 'Overall trip delay in seconds' })
+  delay?: number;
 
   @Field(() => [StopTimeUpdateObject])
   stopTimeUpdates!: StopTimeUpdateObject[];

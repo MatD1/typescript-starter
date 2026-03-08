@@ -7,6 +7,28 @@ type ActivePeriodObject {
   start: Int
 }
 
+"""Per-carriage composition and occupancy (TfNSW extension)"""
+type CarriageDescriptorObject {
+  """Predicted occupancy status at next departure"""
+  departureOccupancyStatus: String
+
+  """Whether this carriage has a luggage rack"""
+  luggageRack: Boolean
+  name: String
+
+  """Current occupancy status of this carriage"""
+  occupancyStatus: String
+
+  """Position of this carriage within the consist (1-based)"""
+  positionInConsist: Int!
+
+  """Whether this is a designated quiet carriage"""
+  quietCarriage: Boolean
+
+  """Toilet availability: NONE | NORMAL | ACCESSIBLE"""
+  toilet: String
+}
+
 type DepartureObject {
   departureTimeEstimated: String
   departureTimePlanned: String
@@ -27,7 +49,15 @@ type DisruptionObject {
   id: String!
   informedEntities: [InformedEntityObject!]!
   mode: String!
-  severity: String
+
+  """Severity level: UNKNOWN_SEVERITY | INFO | WARNING | SEVERE"""
+  severityLevel: String
+
+  """TTS (text-to-speech) version of the description"""
+  ttsDescriptionText: String
+
+  """TTS (text-to-speech) version of the header"""
+  ttsHeaderText: String
   url: String
 }
 
@@ -60,7 +90,11 @@ type GtfsTripObject {
 
 type InformedEntityObject {
   agencyId: String
+  directionId: Int
   routeId: String
+
+  """GTFS route_type (0=tram, 1=metro, 2=rail, 3=bus, 4=ferry)"""
+  routeType: Int
   stopId: String
   tripId: String
 }
@@ -153,7 +187,13 @@ type StopObject {
 type StopTimeUpdateObject {
   arrivalDelay: Int
   arrivalTime: Int
+
+  """Predictive per-carriage occupancy at this stop (TfNSW extension 1007)"""
+  carriagePredictiveOccupancy: [CarriageDescriptorObject!]
   departureDelay: Int
+
+  """Occupancy status at this stop departure"""
+  departureOccupancyStatus: String
   departureTime: Int
   scheduleRelationship: String
   stopId: String
@@ -167,6 +207,8 @@ type TripResultObject {
 }
 
 type TripUpdateObject {
+  """Overall trip delay in seconds"""
+  delay: Int
   directionId: Int
   mode: String!
   routeId: String
@@ -177,20 +219,45 @@ type TripUpdateObject {
   timestamp: Int
   tripId: String!
   vehicleId: String
+
+  """Vehicle label / set number"""
+  vehicleLabel: String
 }
 
 type VehiclePositionObject {
+  airConditioned: Boolean
   bearing: Float
   congestionLevel: String
+
+  """Per-carriage composition with occupancy and amenity data"""
+  consist: [CarriageDescriptorObject!]
   currentStatus: String
   currentStopId: String
+  currentStopSequence: Int
+  directionId: Int
   latitude: Float!
   longitude: Float!
   mode: String!
   occupancyStatus: String
+  odometer: Float
+  performingPriorTrip: Boolean
   routeId: String
+  specialVehicleAttributes: Int
   speed: Float
+  startDate: String
+  startTime: String
   timestamp: Int
+
+  """Track direction: UP | DOWN"""
+  trackDirection: String
   tripId: String
+  tripScheduleRelationship: String
   vehicleId: String!
+
+  """Vehicle label / set number"""
+  vehicleLabel: String
+  vehicleModel: String
+
+  """0=unknown, 1=accessible, 2=not accessible"""
+  wheelchairAccessible: Int
 }
