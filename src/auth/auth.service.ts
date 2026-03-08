@@ -24,12 +24,13 @@ export class AuthService implements OnModuleInit {
       secret: this.configService.get<string>('auth.secret'),
       baseURL,
       basePath: '/auth',
+      trustedOrigins: [baseURL, ...extraOrigins],
 
-      // Allow any origin — this is a REST API protected by API keys.
-      // CSRF is not a concern here; browser-cookie flows aren't the primary use case.
-      trustedOrigins: [baseURL, 'http://localhost:3000', ...extraOrigins],
+      // Disable CSRF check in development so API testing tools (Postman,
+      // curl, Insomnia) work without needing to send an Origin header.
+      // In production the check stays on for proper CSRF protection.
       advanced: {
-        disableCSRFCheck: true,
+        disableCSRFCheck: process.env.NODE_ENV !== 'production',
       },
 
       database: drizzleAdapter(this.db, {
