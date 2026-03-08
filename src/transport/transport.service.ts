@@ -17,6 +17,19 @@ import {
   TripPlannerParams,
 } from './transport.types';
 
+/**
+ * Modes supported by the v2 GTFS-RT trip-updates endpoint.
+ * All other modes fall back to the v1 endpoint.
+ *
+ * v2:  sydneytrains, metro, lightrail (inner west)
+ * v1:  buses, ferries, nswtrains, intercity (regional)
+ */
+const TRIP_UPDATES_V2_MODES = new Set<TransportMode>([
+  'sydneytrains',
+  'metro',
+  'lightrail',
+]);
+
 @Injectable()
 export class TransportService {
   private readonly logger = new Logger(TransportService.name);
@@ -39,12 +52,30 @@ export class TransportService {
     feedType: GtfsRtFeedType,
     mode: TransportMode,
   ): Promise<Buffer> {
-    const url = `${this.baseUrl}/v2/gtfs/${feedType}/${mode}`;
+    const url = this.buildGtfsRtUrl(feedType, mode);
     const config: AxiosRequestConfig = {
       headers: { ...this.authHeaders, Accept: 'application/x-google-protobuf' },
       responseType: 'arraybuffer',
     };
     return this.request<Buffer>(url, config);
+  }
+
+  /**
+   * Builds the correct NSW Open Data URL for a GTFS-RT feed.
+   *
+   * Trip-updates use a version-split endpoint:
+   *   v2/gtfs/realtime/tripupdates/{mode}  — sydneytrains, metro, lightrail
+   *   v1/gtfs/realtime/tripupdates/{mode}  — buses, ferries, nswtrains, intercity
+   *
+   * Vehicle positions and alerts use the v2 non-realtime path (no version split):
+   *   v2/gtfs/{feedType}/{mode}
+   */
+  buildGtfsRtUrl(feedType: GtfsRtFeedType, mode: TransportMode): string {
+    if (feedType === 'tripupdates') {
+      const version = TRIP_UPDATES_V2_MODES.has(mode) ? 'v2' : 'v1';
+      return `${this.baseUrl}/${version}/gtfs/realtime/tripupdates/${mode}`;
+    }
+    return `${this.baseUrl}/v2/gtfs/${feedType}/${mode}`;
   }
 
   async getTripPlan(params: TripPlannerParams): Promise<unknown> {
