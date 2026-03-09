@@ -3,12 +3,16 @@ import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import type { Request, Response, NextFunction } from 'express';
 import { json, urlencoded } from 'express';
+import compression from 'compression';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   // Disable NestJS's built-in body parser so better-auth can read the raw
   // request body on /auth/* routes via its own toNodeHandler.
   const app = await NestFactory.create(AppModule, { bodyParser: false });
+
+  // Compress all responses — saves 60-80% on large GTFS-RT payloads.
+  app.use(compression());
 
   const jsonParser = json();
   const urlencodedParser = urlencoded({ extended: true });
@@ -61,9 +65,9 @@ async function bootstrap() {
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
-  console.log(`🚉 NSW Transport API running on: http://localhost:${port}`);
-  console.log(`📖 REST docs: http://localhost:${port}/api/docs`);
-  console.log(`🔮 GraphQL: http://localhost:${port}/graphql`);
+  console.log(`NSW Transport API running on: http://localhost:${port}`);
+  console.log(`REST docs: http://localhost:${port}/api/docs`);
+  console.log(`GraphQL: http://localhost:${port}/graphql`);
 }
 
 void bootstrap();

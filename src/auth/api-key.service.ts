@@ -9,8 +9,14 @@ import { randomBytes } from 'crypto';
 import { DRIZZLE } from '../database/database.module';
 import type { DrizzleDB } from '../database/database.module';
 import { apikey, session } from '../database/schema/auth.schema';
+import { CacheService } from '../cache/cache.service';
 
 const KEY_PREFIX = 'nsw_';
+
+/** Redis TTL for cached API key verification results (seconds). */
+const APIKEY_VERIFY_TTL = 60;
+/** Redis TTL for cached session → userId lookups (seconds). */
+const SESSION_TTL = 120;
 
 export interface ApiKeyRecord {
   id: string;
@@ -22,9 +28,18 @@ export interface ApiKeyRecord {
   expiresAt: Date | null;
 }
 
+interface VerifyResult {
+  valid: boolean;
+  userId?: string;
+  keyId?: string;
+}
+
 @Injectable()
 export class ApiKeyService {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDB,
+    private readonly cache: CacheService,
+  ) {}
 
   async createApiKey(
     userId: string,
@@ -53,24 +68,34 @@ export class ApiKeyService {
     return { key: fullKey, id, start };
   }
 
-  async verifyApiKey(
-    keyValue: string,
-  ): Promise<{ valid: boolean; userId?: string; keyId?: string }> {
+  async verifyApiKey(keyValue: string): Promise<VerifyResult> {
+    const cacheKey = `apikey:verify:${keyValue}`;
+
+    const cached = await this.cache.get<VerifyResult>(cacheKey);
+    if (cached !== null) return cached;
+
     const rows = await this.db
       .select()
       .from(apikey)
       .where(eq(apikey.key, keyValue))
       .limit(1);
 
-    if (!rows.length) return { valid: false };
-
-    const record = rows[0];
-    if (!record.enabled) return { valid: false };
-    if (record.expiresAt && record.expiresAt < new Date()) {
-      return { valid: false };
+    if (!rows.length) {
+      const result: VerifyResult = { valid: false };
+      // Cache negative results briefly to prevent DB hammering with bad keys.
+      await this.cache.set(cacheKey, result, 10);
+      return result;
     }
 
-    await this.db
+    const record = rows[0];
+    if (!record.enabled || (record.expiresAt && record.expiresAt < new Date())) {
+      const result: VerifyResult = { valid: false };
+      await this.cache.set(cacheKey, result, APIKEY_VERIFY_TTL);
+      return result;
+    }
+
+    // Fire-and-forget request count update — don't await to keep latency low.
+    void this.db
       .update(apikey)
       .set({
         requestCount: (record.requestCount ?? 0) + 1,
@@ -79,7 +104,13 @@ export class ApiKeyService {
       })
       .where(eq(apikey.id, record.id));
 
-    return { valid: true, userId: record.userId, keyId: record.id };
+    const result: VerifyResult = {
+      valid: true,
+      userId: record.userId,
+      keyId: record.id,
+    };
+    await this.cache.set(cacheKey, result, APIKEY_VERIFY_TTL);
+    return result;
   }
 
   async listApiKeys(userId: string): Promise<ApiKeyRecord[]> {
@@ -113,9 +144,17 @@ export class ApiKeyService {
       .update(apikey)
       .set({ enabled: false, updatedAt: new Date() })
       .where(eq(apikey.id, keyId));
+
+    // Invalidate the cached verification result immediately on revoke.
+    await this.cache.del(`apikey:verify:${rows[0].key}`);
   }
 
   async getUserFromSession(sessionToken: string): Promise<string | null> {
+    const cacheKey = `session:user:${sessionToken}`;
+
+    const cached = await this.cache.get<string | null>(cacheKey);
+    if (cached !== null) return cached;
+
     const rows = await this.db
       .select()
       .from(session)
@@ -125,6 +164,9 @@ export class ApiKeyService {
     if (!rows.length) return null;
     const s = rows[0];
     if (s.expiresAt < new Date()) return null;
+
+    await this.cache.set(cacheKey, s.userId, SESSION_TTL);
     return s.userId;
   }
 }
+

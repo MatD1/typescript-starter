@@ -1,3 +1,5 @@
+import { registerEnumType } from '@nestjs/graphql';
+
 export const TRANSPORT_MODES = [
   'sydneytrains',
   'intercity',
@@ -9,6 +11,31 @@ export const TRANSPORT_MODES = [
 ] as const;
 
 export type TransportMode = (typeof TRANSPORT_MODES)[number];
+
+/** GraphQL enum for transport mode — use in resolver @Args instead of String. */
+export enum TransportModeEnum {
+  sydneytrains = 'sydneytrains',
+  intercity = 'intercity',
+  buses = 'buses',
+  nswtrains = 'nswtrains',
+  ferries = 'ferries',
+  metro = 'metro',
+  lightrail = 'lightrail',
+}
+
+registerEnumType(TransportModeEnum, {
+  name: 'TransportMode',
+  description: 'NSW transport network mode',
+  valuesMap: {
+    sydneytrains: { description: 'Sydney Trains suburban network' },
+    intercity: { description: 'Intercity / regional rail services' },
+    buses: { description: 'Sydney metropolitan buses' },
+    nswtrains: { description: 'NSW TrainLink long-distance trains' },
+    ferries: { description: 'Sydney Ferries' },
+    metro: { description: 'Sydney Metro rapid transit' },
+    lightrail: { description: 'Light rail (CBD, Inner West, Parramatta)' },
+  },
+});
 
 export const GTFS_RT_FEED_TYPES = [
   'vehiclepos',

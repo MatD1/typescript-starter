@@ -5,6 +5,7 @@ import {
   GtfsStopObject,
   GtfsTripObject,
 } from './dto/gtfs-static.objects';
+import { TransportModeEnum } from '../transport/transport.types';
 
 @Resolver()
 export class GtfsStaticResolver {
@@ -12,7 +13,8 @@ export class GtfsStaticResolver {
 
   @Query(() => [GtfsRouteObject], { description: 'List GTFS static routes.' })
   gtfsRoutes(
-    @Args('mode', { nullable: true }) mode?: string,
+    @Args('mode', { type: () => TransportModeEnum, nullable: true })
+    mode?: TransportModeEnum,
     @Args('limit', { nullable: true, type: () => Number }) limit?: number,
   ) {
     return this.gtfsStaticService.getRoutes(mode, limit);
@@ -20,7 +22,8 @@ export class GtfsStaticResolver {
 
   @Query(() => [GtfsStopObject], { description: 'List GTFS static stops.' })
   gtfsStops(
-    @Args('mode', { nullable: true }) mode?: string,
+    @Args('mode', { type: () => TransportModeEnum, nullable: true })
+    mode?: TransportModeEnum,
     @Args('limit', { nullable: true, type: () => Number }) limit?: number,
   ) {
     return this.gtfsStaticService.getStops(mode, limit);
