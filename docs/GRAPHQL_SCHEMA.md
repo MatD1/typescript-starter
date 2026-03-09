@@ -110,6 +110,97 @@ query MetroDelays {
 
 ---
 
+### trackTrip ⭐ Flutter map feature
+
+Look up the live vehicle for a specific planned trip. Returns the combined GPS
+position, delays, stop-time updates and vehicle amenities in a single query — no
+client-side joins needed.
+
+Returns **`null`** (not an error) when the vehicle has not started broadcasting
+yet (pre-departure) or when the trip has ended.
+
+**Complexity**: 1 per call (mode-scoped cache hit) to 7 (full fan-out).  
+**Cache**: 15 s under `realtime:track:{tripId}`.
+
+```graphql
+trackTrip(tripId: String!, mode: TransportMode): TrackedTripObject
+```
+
+| Argument | Type            | Required | Description                                         |
+|----------|-----------------|----------|-----------------------------------------------------|
+| `tripId` | `String!`       | Yes      | GTFS trip ID from `planTrip` → `legs[n].tripId`    |
+| `mode`   | `TransportMode` | No       | Mode hint for faster lookup (e.g. `sydneytrains`)   |
+
+**Full Flutter query — map pin + train card:**
+```graphql
+query TrackMyTrip($tripId: String!, $mode: TransportMode) {
+  trackTrip(tripId: $tripId, mode: $mode) {
+    tripId
+    routeId
+    vehicleLabel
+    mode
+    scheduleRelationship
+    delay
+    position {
+      latitude
+      longitude
+      bearing
+      speed
+      currentStatus
+      currentStopId
+      occupancyStatus
+      trackDirection
+      consist {
+        positionInConsist
+        occupancyStatus
+        quietCarriage
+      }
+    }
+    stopTimeUpdates {
+      stopId
+      stopSequence
+      arrivalDelay
+      departureDelay
+      departureOccupancyStatus
+    }
+    vehicleModel
+    airConditioned
+    wheelchairAccessible
+  }
+}
+```
+
+**Flutter polling pattern** (update map pin every 15 s):
+```dart
+// Poll trackTrip every 15 s to keep the map pin fresh
+Timer.periodic(const Duration(seconds: 15), (_) async {
+  final result = await client.query(
+    QueryOptions(
+      document: gql(trackMyTripQuery),
+      variables: {'tripId': leg.tripId, 'mode': leg.mode},
+      fetchPolicy: FetchPolicy.networkOnly,
+    ),
+  );
+  if (result.data?['trackTrip'] != null) {
+    final tracked = TrackedTrip.fromJson(result.data!['trackTrip']);
+    mapController.animateCamera(CameraUpdate.newLatLng(
+      LatLng(tracked.position.latitude, tracked.position.longitude),
+    ));
+  }
+});
+```
+
+**Null handling** — vehicle not yet active:
+```dart
+final tracked = result.data?['trackTrip'];
+if (tracked == null) {
+  // Show "Train not yet active" banner; retry in 30 s
+  return;
+}
+```
+
+---
+
 ### disruptions
 
 Current service alerts. Cached 300 s per mode.

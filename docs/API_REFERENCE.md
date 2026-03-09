@@ -222,6 +222,73 @@ X-API-Key: nsw_xxx
 
 ---
 
+### GET /api/v1/realtime/track-trip
+
+Track a specific trip live — vehicle GPS position, delays, stop-time updates,
+and vehicle amenity info. Use the `tripId` from a planned journey leg.
+
+Returns **404** if the vehicle is not yet active (e.g. pre-departure).
+
+| Param    | Type           | Required | Description                                            |
+|----------|----------------|----------|--------------------------------------------------------|
+| `tripId` | `string`       | **Yes**  | GTFS trip ID — from a `LegObject.tripId` in a plan    |
+| `mode`   | `TransportMode`| No       | Mode hint — optional but improves response time        |
+
+```http
+GET /api/v1/realtime/track-trip?tripId=28.T.1-T1-Y-mjp-1.1.H&mode=sydneytrains
+X-API-Key: nsw_xxx
+```
+
+**Response** `200` — `TrackedTripObject`
+```json
+{
+  "tripId": "28.T.1-T1-Y-mjp-1.1.H",
+  "routeId": "T1",
+  "vehicleId": "1234",
+  "vehicleLabel": "Set 42",
+  "mode": "sydneytrains",
+  "scheduleRelationship": "SCHEDULED",
+  "delay": 120,
+  "position": {
+    "latitude": -33.865143,
+    "longitude": 151.20699,
+    "bearing": 270.0,
+    "speed": 22.0,
+    "currentStatus": "IN_TRANSIT_TO",
+    "currentStopId": "2000116",
+    "occupancyStatus": "MANY_SEATS_AVAILABLE",
+    "trackDirection": "DOWN",
+    "timestamp": 1700000000,
+    "consist": [
+      { "positionInConsist": 1, "occupancyStatus": "MANY_SEATS_AVAILABLE", "quietCarriage": false },
+      { "positionInConsist": 2, "occupancyStatus": "FEW_SEATS_AVAILABLE",  "quietCarriage": true  }
+    ]
+  },
+  "stopTimeUpdates": [
+    {
+      "stopSequence": 5,
+      "stopId": "2000116",
+      "arrivalDelay": 120,
+      "departureDelay": 90,
+      "scheduleRelationship": "SCHEDULED",
+      "departureOccupancyStatus": "MANY_SEATS_AVAILABLE"
+    }
+  ],
+  "vehicleModel": "Waratah A",
+  "airConditioned": true,
+  "wheelchairAccessible": 1
+}
+```
+
+**Response** `404` — when vehicle is not yet active
+```json
+{ "statusCode": 404, "message": "Trip ... is not currently active. The vehicle may not have departed yet." }
+```
+
+**Cache-Control**: `public, max-age=15`
+
+---
+
 ## Disruptions
 
 ### GET /api/v1/disruptions
