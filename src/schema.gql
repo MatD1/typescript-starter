@@ -110,6 +110,39 @@ type LegObject {
   lineName: String
   origin: LocationObject
   transportation: String
+  tripId: String
+}
+
+type LivePositionObject {
+  bearing: Float
+
+  """Per-carriage occupancy and amenity data"""
+  consist: [CarriageDescriptorObject!]
+
+  """INCOMING_AT | STOPPED_AT | IN_TRANSIT_TO"""
+  currentStatus: String
+  currentStopId: String
+  currentStopSequence: Int
+  latitude: Float!
+  longitude: Float!
+  occupancyStatus: String
+  speed: Float
+  timestamp: Int
+
+  """TfNSW track direction: UP | DOWN"""
+  trackDirection: String
+}
+
+type LiveStopTimeUpdateObject {
+  """Arrival delay in seconds (positive = late)"""
+  arrivalDelay: Int
+
+  """Departure delay in seconds"""
+  departureDelay: Int
+  departureOccupancyStatus: String
+  scheduleRelationship: String
+  stopId: String
+  stopSequence: Int
 }
 
 type LocationObject {
@@ -153,6 +186,17 @@ type Query {
 
   """Get a station by stop ID."""
   stationById(stopId: String!): StationObject
+
+  """
+  Track a specific trip live. Returns vehicle position, delays, stop-time updates and vehicle amenity info for the given GTFS trip ID. Returns null if the vehicle is not yet active or the trip has ended. Pass the `tripId` field from a planned journey leg (planTrip query).
+  """
+  trackTrip(
+    """Optional mode hint — improves lookup speed"""
+    mode: TransportMode
+
+    """GTFS trip ID from a planned leg"""
+    tripId: String!
+  ): TrackedTripObject
 
   """Get live trip updates. Optionally filter by transport mode."""
   tripUpdates(mode: TransportMode): [TripUpdateObject!]!
@@ -198,6 +242,38 @@ type StopTimeUpdateObject {
   scheduleRelationship: String
   stopId: String
   stopSequence: Int
+}
+
+type TrackedTripObject {
+  airConditioned: Boolean
+
+  """Overall trip delay in seconds (positive = late)"""
+  delay: Int
+
+  """Transport mode this vehicle belongs to"""
+  mode: String!
+  performingPriorTrip: Boolean
+
+  """Live GPS position and status. Null if vehicle is not yet active."""
+  position: LivePositionObject
+  routeId: String
+
+  """Overall trip schedule relationship"""
+  scheduleRelationship: String
+
+  """Real-time updates for upcoming stops on this trip"""
+  stopTimeUpdates: [LiveStopTimeUpdateObject!]
+
+  """GTFS trip ID — matches the tripId on a planned LegObject"""
+  tripId: String!
+  vehicleId: String
+
+  """Vehicle label / fleet set number"""
+  vehicleLabel: String
+  vehicleModel: String
+
+  """0=unknown 1=accessible 2=not accessible"""
+  wheelchairAccessible: Int
 }
 
 """NSW transport network mode"""

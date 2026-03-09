@@ -21,6 +21,9 @@ export class LocationObject {
 @ObjectType()
 export class LegObject {
   @Field({ nullable: true })
+  tripId?: string;
+
+  @Field({ nullable: true })
   transportation?: string;
 
   @Field({ nullable: true })

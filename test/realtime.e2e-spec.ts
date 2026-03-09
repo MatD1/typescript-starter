@@ -110,6 +110,42 @@ describe('Realtime endpoints (e2e)', () => {
   const mockRealtimeService = {
     getVehiclePositions: jest.fn().mockResolvedValue(mockVehicles),
     getTripUpdates: jest.fn().mockResolvedValue(mockTripUpdates),
+    trackTrip: jest.fn().mockImplementation(async (tripId: string) => {
+      if (tripId === 'TRIP-001') {
+        return {
+          tripId: 'TRIP-001',
+          routeId: 'T1',
+          vehicleId: 'V001',
+          vehicleLabel: 'Set 42',
+          mode: 'sydneytrains',
+          scheduleRelationship: 'SCHEDULED',
+          delay: 120,
+          position: {
+            latitude: -33.865,
+            longitude: 151.209,
+            bearing: 270,
+            speed: 20,
+            currentStatus: 'IN_TRANSIT_TO',
+            currentStopId: 'Central',
+            occupancyStatus: 'MANY_SEATS_AVAILABLE',
+            trackDirection: 'DOWN',
+          },
+          stopTimeUpdates: [
+            {
+              stopSequence: 1,
+              stopId: 'Central',
+              arrivalDelay: 120,
+              departureDelay: 90,
+              departureOccupancyStatus: 'MANY_SEATS_AVAILABLE',
+            },
+          ],
+          vehicleModel: 'Waratah A',
+          airConditioned: true,
+          wheelchairAccessible: 1,
+        };
+      }
+      return null;
+    }),
   };
 
   beforeAll(async () => {
@@ -202,6 +238,84 @@ describe('Realtime endpoints (e2e)', () => {
       .expect(200);
 
     expect(mockRealtimeService.getVehiclePositions).toHaveBeenCalledWith('buses');
+  });
+
+  // ── Track trip ──────────────────────────────────────────────────────────────
+
+  it('GET /api/v1/realtime/track-trip → 401 without API key', async () => {
+    await request(app.getHttpServer())
+      .get('/api/v1/realtime/track-trip?tripId=TRIP-001')
+      .expect(401);
+  });
+
+  it('GET /api/v1/realtime/track-trip → 200 with known tripId', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/realtime/track-trip?tripId=TRIP-001')
+      .set('X-API-Key', TEST_KEY)
+      .expect(200);
+
+    expect(res.body.tripId).toBe('TRIP-001');
+    expect(res.body.routeId).toBe('T1');
+    expect(res.body.mode).toBe('sydneytrains');
+    expect(res.body.delay).toBe(120);
+  });
+
+  it('GET /api/v1/realtime/track-trip → 200 includes live position', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/realtime/track-trip?tripId=TRIP-001')
+      .set('X-API-Key', TEST_KEY)
+      .expect(200);
+
+    expect(res.body.position.latitude).toBeCloseTo(-33.865, 2);
+    expect(res.body.position.longitude).toBeCloseTo(151.209, 2);
+    expect(res.body.position.bearing).toBe(270);
+    expect(res.body.position.currentStatus).toBe('IN_TRANSIT_TO');
+    expect(res.body.position.trackDirection).toBe('DOWN');
+  });
+
+  it('GET /api/v1/realtime/track-trip → 200 includes NSW vehicle amenity info', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/realtime/track-trip?tripId=TRIP-001')
+      .set('X-API-Key', TEST_KEY)
+      .expect(200);
+
+    expect(res.body.vehicleModel).toBe('Waratah A');
+    expect(res.body.airConditioned).toBe(true);
+    expect(res.body.wheelchairAccessible).toBe(1);
+  });
+
+  it('GET /api/v1/realtime/track-trip → 200 includes stopTimeUpdates', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/realtime/track-trip?tripId=TRIP-001')
+      .set('X-API-Key', TEST_KEY)
+      .expect(200);
+
+    expect(Array.isArray(res.body.stopTimeUpdates)).toBe(true);
+    const stu = res.body.stopTimeUpdates[0];
+    expect(stu.stopId).toBe('Central');
+    expect(stu.arrivalDelay).toBe(120);
+    expect(stu.departureOccupancyStatus).toBe('MANY_SEATS_AVAILABLE');
+  });
+
+  it('GET /api/v1/realtime/track-trip → 404 for unknown tripId', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/api/v1/realtime/track-trip?tripId=UNKNOWN-TRIP')
+      .set('X-API-Key', TEST_KEY)
+      .expect(404);
+
+    expect(res.body.message).toContain('UNKNOWN-TRIP');
+  });
+
+  it('GET /api/v1/realtime/track-trip?mode=sydneytrains → passes mode hint to service', async () => {
+    await request(app.getHttpServer())
+      .get('/api/v1/realtime/track-trip?tripId=TRIP-001&mode=sydneytrains')
+      .set('X-API-Key', TEST_KEY)
+      .expect(200);
+
+    expect(mockRealtimeService.trackTrip).toHaveBeenCalledWith(
+      'TRIP-001',
+      'sydneytrains',
+    );
   });
 
   // ── Trip updates ────────────────────────────────────────────────────────────

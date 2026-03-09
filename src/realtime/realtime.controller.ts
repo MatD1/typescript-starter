@@ -1,4 +1,9 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  NotFoundException,
+  Query,
+} from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { RealtimeService } from './realtime.service';
 import { TRANSPORT_MODES } from '../transport/transport.types';
@@ -32,5 +37,37 @@ export class RealtimeController {
   })
   getTripUpdates(@Query('mode') mode?: TransportMode) {
     return this.realtimeService.getTripUpdates(mode);
+  }
+
+  @Get('track-trip')
+  @ApiOperation({
+    summary: 'Track a specific trip live',
+    description:
+      'Returns the live vehicle position, delay information, and vehicle amenities ' +
+      'for a specific GTFS trip ID. Use the `tripId` field from a planned journey leg ' +
+      'to call this endpoint. Returns 404 if the vehicle is not yet active.',
+  })
+  @ApiQuery({
+    name: 'tripId',
+    required: true,
+    description: 'GTFS trip ID (from a planned journey leg)',
+  })
+  @ApiQuery({
+    name: 'mode',
+    required: false,
+    enum: TRANSPORT_MODES,
+    description: 'Transport mode hint — improves response time but is optional',
+  })
+  async trackTrip(
+    @Query('tripId') tripId: string,
+    @Query('mode') mode?: TransportMode,
+  ) {
+    const result = await this.realtimeService.trackTrip(tripId, mode);
+    if (!result) {
+      throw new NotFoundException(
+        `Trip ${tripId} is not currently active. The vehicle may not have departed yet.`,
+      );
+    }
+    return result;
   }
 }

@@ -102,6 +102,7 @@ export class TripPlannerService {
     const origin = l?.origin as NswApiRecord | undefined;
     const dest = l?.destination as NswApiRecord | undefined;
     return {
+      tripId: transport?.id as string | undefined,
       transportation: (transport?.product as NswApiRecord | undefined)?.name as
         | string
         | undefined,

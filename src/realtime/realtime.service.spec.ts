@@ -22,6 +22,9 @@ const mockGtfsRt = {
 
 /** Passthrough cache — always calls the factory and returns its value */
 const mockCacheService = {
+  get: jest.fn().mockResolvedValue(null),
+  set: jest.fn().mockResolvedValue(undefined),
+  del: jest.fn().mockResolvedValue(undefined),
   getOrSet: jest.fn(async (_key: string, factory: () => unknown) => factory()),
 };
 
@@ -130,6 +133,142 @@ describe('RealtimeService', () => {
       expect(stu.carriagePredictiveOccupancy![0].occupancyStatus).toBe(
         'FEW_SEATS_AVAILABLE',
       );
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  describe('trackTrip', () => {
+    const vehicleForTrip: VehiclePosition = {
+      ...baseVehicle,
+      tripId: 'TRIP-LIVE',
+      routeId: 'T1',
+      vehicleId: 'V42',
+      vehicleLabel: 'Set 42',
+      bearing: 270,
+      speed: 22,
+      currentStatus: 'IN_TRANSIT_TO',
+      currentStopId: 'Central',
+      occupancyStatus: 'MANY_SEATS_AVAILABLE',
+      trackDirection: 'DOWN',
+      vehicleModel: 'Waratah A',
+      airConditioned: true,
+      wheelchairAccessible: 1,
+      consist: [{ positionInConsist: 1, occupancyStatus: 'EMPTY', quietCarriage: false }],
+    };
+
+    const tripUpdateForTrip: TripUpdate = {
+      tripId: 'TRIP-LIVE',
+      routeId: 'T1',
+      vehicleId: 'V42',
+      vehicleLabel: 'Set 42',
+      delay: 90,
+      scheduleRelationship: 'SCHEDULED',
+      stopTimeUpdates: [
+        {
+          stopId: 'Central',
+          stopSequence: 1,
+          arrivalDelay: 90,
+          departureDelay: 60,
+          departureOccupancyStatus: 'MANY_SEATS_AVAILABLE',
+        },
+      ],
+    };
+
+    it('returns null when tripId is not found in any mode', async () => {
+      mockGtfsRt.getVehiclePositions.mockResolvedValue([]);
+      mockGtfsRt.getTripUpdates.mockResolvedValue([]);
+
+      const result = await service.trackTrip('UNKNOWN-TRIP');
+      expect(result).toBeNull();
+    });
+
+    it('returns null when tripId is not found with mode hint', async () => {
+      mockGtfsRt.getVehiclePositions.mockResolvedValue([]);
+      mockGtfsRt.getTripUpdates.mockResolvedValue([]);
+
+      const result = await service.trackTrip('UNKNOWN-TRIP', 'sydneytrains');
+      expect(result).toBeNull();
+    });
+
+    it('returns TrackedTripObject when vehicle is found by tripId', async () => {
+      mockGtfsRt.getVehiclePositions.mockResolvedValue([vehicleForTrip]);
+      mockGtfsRt.getTripUpdates.mockResolvedValue([tripUpdateForTrip]);
+
+      const result = await service.trackTrip('TRIP-LIVE', 'sydneytrains');
+      expect(result).not.toBeNull();
+      expect(result!.tripId).toBe('TRIP-LIVE');
+      expect(result!.mode).toBe('sydneytrains');
+    });
+
+    it('joins vehicle position data into result', async () => {
+      mockGtfsRt.getVehiclePositions.mockResolvedValue([vehicleForTrip]);
+      mockGtfsRt.getTripUpdates.mockResolvedValue([tripUpdateForTrip]);
+
+      const result = await service.trackTrip('TRIP-LIVE', 'sydneytrains');
+      expect(result!.position).toBeDefined();
+      expect(result!.position!.latitude).toBeCloseTo(-33.865, 2);
+      expect(result!.position!.bearing).toBe(270);
+      expect(result!.position!.currentStatus).toBe('IN_TRANSIT_TO');
+      expect(result!.position!.trackDirection).toBe('DOWN');
+    });
+
+    it('joins trip update delay + stopTimeUpdates into result', async () => {
+      mockGtfsRt.getVehiclePositions.mockResolvedValue([vehicleForTrip]);
+      mockGtfsRt.getTripUpdates.mockResolvedValue([tripUpdateForTrip]);
+
+      const result = await service.trackTrip('TRIP-LIVE', 'sydneytrains');
+      expect(result!.delay).toBe(90);
+      expect(result!.scheduleRelationship).toBe('SCHEDULED');
+      expect(result!.stopTimeUpdates).toHaveLength(1);
+      expect(result!.stopTimeUpdates![0].stopId).toBe('Central');
+      expect(result!.stopTimeUpdates![0].arrivalDelay).toBe(90);
+    });
+
+    it('populates NSW vehicle amenity fields', async () => {
+      mockGtfsRt.getVehiclePositions.mockResolvedValue([vehicleForTrip]);
+      mockGtfsRt.getTripUpdates.mockResolvedValue([tripUpdateForTrip]);
+
+      const result = await service.trackTrip('TRIP-LIVE', 'sydneytrains');
+      expect(result!.vehicleModel).toBe('Waratah A');
+      expect(result!.airConditioned).toBe(true);
+      expect(result!.wheelchairAccessible).toBe(1);
+    });
+
+    it('returns result when only vehicle position data is present (no tripUpdate yet)', async () => {
+      mockGtfsRt.getVehiclePositions.mockResolvedValue([vehicleForTrip]);
+      mockGtfsRt.getTripUpdates.mockResolvedValue([]); // no trip update yet
+
+      const result = await service.trackTrip('TRIP-LIVE', 'sydneytrains');
+      expect(result).not.toBeNull();
+      expect(result!.tripId).toBe('TRIP-LIVE');
+      expect(result!.position).toBeDefined();
+      expect(result!.delay).toBeUndefined();
+    });
+
+    it('returns result when only tripUpdate is present (vehicle position not broadcasting yet)', async () => {
+      mockGtfsRt.getVehiclePositions.mockResolvedValue([]); // no position yet
+      mockGtfsRt.getTripUpdates.mockResolvedValue([tripUpdateForTrip]);
+
+      const result = await service.trackTrip('TRIP-LIVE', 'sydneytrains');
+      expect(result).not.toBeNull();
+      expect(result!.tripId).toBe('TRIP-LIVE');
+      expect(result!.position).toBeUndefined();
+      expect(result!.delay).toBe(90);
+    });
+
+    it('searches all modes when no mode hint is provided', async () => {
+      // Return data only for metro, not sydneytrains (the first mode)
+      mockGtfsRt.getVehiclePositions.mockImplementation(async (m: string) =>
+        m === 'metro' ? [{ ...vehicleForTrip, tripId: 'TRIP-LIVE' }] : [],
+      );
+      mockGtfsRt.getTripUpdates.mockImplementation(async (m: string) =>
+        m === 'metro' ? [tripUpdateForTrip] : [],
+      );
+
+      const result = await service.trackTrip('TRIP-LIVE');
+      expect(result).not.toBeNull();
+      expect(result!.mode).toBe('metro');
     });
   });
 });
