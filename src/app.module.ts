@@ -6,13 +6,14 @@ import type { ApolloDriverConfig } from '@nestjs/apollo';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { ThrottlerStorageRedisService } from 'nestjs-throttler-storage-redis';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import {
   fieldExtensionsEstimator,
   getComplexity,
   simpleEstimator,
 } from 'graphql-query-complexity';
 import { GraphQLError } from 'graphql';
+import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
 import { join } from 'path';
 
 import configuration from './config/configuration';
@@ -64,6 +65,7 @@ const MAX_QUERY_DEPTH = 8;
       persistedQueries: {},
       context: ({ req }: { req: Request }) => ({ req }),
       plugins: [
+        ApolloServerPluginLandingPageLocalDefault(),
         {
           // eslint-disable-next-line @typescript-eslint/require-await
           async requestDidStart() {
@@ -130,4 +132,4 @@ const MAX_QUERY_DEPTH = 8;
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
   ],
 })
-export class AppModule {}
+export class AppModule { }
