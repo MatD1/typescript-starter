@@ -14,6 +14,8 @@ export const user = pgTable('user', {
   image: text('image'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  role: text('role').notNull().default('user'),
+  banned: boolean('banned').notNull().default(false),
 });
 
 export const session = pgTable('session', {

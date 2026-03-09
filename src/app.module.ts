@@ -25,9 +25,11 @@ import { TripPlannerModule } from './trip-planner/trip-planner.module';
 import { StationsModule } from './stations/stations.module';
 import { DisruptionsModule } from './disruptions/disruptions.module';
 import { GtfsStaticModule } from './gtfs-static/gtfs-static.module';
+import { AdminModule } from './admin/admin.module';
 
 import { ApiKeyGuard } from './auth/guards/api-key.guard';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { RequestLogInterceptor } from './common/interceptors/request-log.interceptor';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 import { CacheControlInterceptor } from './common/interceptors/cache-control.interceptor';
 
@@ -118,11 +120,12 @@ const MAX_QUERY_DEPTH = 8;
     StationsModule,
     DisruptionsModule,
     GtfsStaticModule,
+    AdminModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ApiKeyGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
-    { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: RequestLogInterceptor },
     { provide: APP_INTERCEPTOR, useClass: CacheControlInterceptor },
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
   ],

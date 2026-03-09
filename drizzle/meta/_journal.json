@@ -8,6 +8,20 @@
       "when": 1772950552669,
       "tag": "0000_abnormal_argent",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1773029426078,
+      "tag": "0001_dazzling_gladiator",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1773029457316,
+      "tag": "0002_shallow_paper_doll",
+      "breakpoints": true
     }
   ]
 }

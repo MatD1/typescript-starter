@@ -37,6 +37,27 @@ export class CacheService implements OnModuleDestroy {
     await this.client.del(key);
   }
 
+  /**
+   * Flush ALL keys from the current Redis database.
+   * Use with caution — intended for admin cache-clear operations only.
+   */
+  async flush(): Promise<void> {
+    await this.client.flushdb();
+  }
+
+  /**
+   * Ping Redis to check connectivity.
+   * Returns true if Redis responds with PONG, false otherwise.
+   */
+  async ping(): Promise<boolean> {
+    try {
+      const result = await this.client.ping();
+      return result === 'PONG';
+    } catch {
+      return false;
+    }
+  }
+
   async getOrSet<T>(
     key: string,
     factory: () => Promise<T>,

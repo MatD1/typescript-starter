@@ -7,6 +7,86 @@ type ActivePeriodObject {
   start: Int
 }
 
+type AdminApiKey {
+  createdAt: DateTime!
+  enabled: Boolean!
+  expiresAt: DateTime
+  id: ID!
+  name: String
+  permissions: String
+  rateLimitMax: Float
+  remaining: Int
+  requestCount: Int!
+  start: String
+  updatedAt: DateTime!
+  userId: String!
+}
+
+type AdminApiKeyDetail {
+  createdAt: DateTime!
+  enabled: Boolean!
+  expiresAt: DateTime
+  id: ID!
+  name: String
+  permissions: String
+  rateLimitMax: Float
+  remaining: Int
+  requestCount: Int!
+  start: String
+  updatedAt: DateTime!
+  usage7d: [DailyUsageBucket!]!
+  userId: String!
+}
+
+type AdminLogEntry {
+  createdAt: DateTime!
+  error: String
+  id: ID!
+  ipAddress: String
+  keyId: String
+  method: String!
+  path: String!
+  responseTimeMs: Int!
+  statusCode: Int!
+  userAgent: String
+  userId: String
+}
+
+type AdminLogPage {
+  data: [AdminLogEntry!]!
+  nextCursor: String
+  total: Int!
+}
+
+type AdminOverviewStats {
+  activeUsers7d: Int!
+  errorRate24h: Float!
+  topMode: String!
+  totalRequests24h: Int!
+}
+
+type AdminUser {
+  banned: Boolean!
+  createdAt: DateTime!
+  email: String!
+  id: ID!
+  name: String!
+  role: String!
+  updatedAt: DateTime!
+}
+
+type AdminUserDetail {
+  apiKeyCount: Int!
+  banned: Boolean!
+  createdAt: DateTime!
+  email: String!
+  id: ID!
+  name: String!
+  requestCount7d: Int!
+  role: String!
+  updatedAt: DateTime!
+}
+
 """Per-carriage composition and occupancy (TfNSW extension)"""
 type CarriageDescriptorObject {
   """Predicted occupancy status at next departure"""
@@ -28,6 +108,16 @@ type CarriageDescriptorObject {
   """Toilet availability: NONE | NORMAL | ACCESSIBLE"""
   toilet: String
 }
+
+type DailyUsageBucket {
+  count: Int!
+  date: String!
+}
+
+"""
+A date-time string at UTC, such as 2019-12-03T09:54:33Z, compliant with the date-time format.
+"""
+scalar DateTime
 
 type DepartureObject {
   departureTimeEstimated: String
@@ -61,6 +151,16 @@ type DisruptionObject {
   url: String
 }
 
+type EndpointStat {
+  count: Int!
+  path: String!
+}
+
+type GtfsIngestResult {
+  modesIngested: [String!]!
+  success: Boolean!
+}
+
 type GtfsRouteObject {
   mode: String
   routeColor: String
@@ -70,6 +170,11 @@ type GtfsRouteObject {
   routeType: Int
 }
 
+type GtfsStatus {
+  lastIngest: String
+  tableCounts: [GtfsTableCount!]!
+}
+
 type GtfsStopObject {
   lat: Float
   lon: Float
@@ -77,6 +182,11 @@ type GtfsStopObject {
   stopCode: String
   stopId: String!
   stopName: String!
+}
+
+type GtfsTableCount {
+  count: Int!
+  table: String!
 }
 
 type GtfsTripObject {
@@ -97,6 +207,12 @@ type InformedEntityObject {
   routeType: Int
   stopId: String
   tripId: String
+}
+
+type KeyStat {
+  count: Int!
+  keyId: String!
+  keyName: String
 }
 
 type LegObject {
@@ -153,7 +269,46 @@ type LocationObject {
   type: String
 }
 
+type Mutation {
+  adminDeleteApiKey(id: ID!): Boolean!
+  adminDeleteUser(id: ID!): Boolean!
+  adminFlushCache: Boolean!
+  adminResetApiKeyUsage(id: ID!): AdminApiKey!
+  adminTriggerGtfsIngest: GtfsIngestResult!
+  adminUpdateApiKey(id: ID!, input: UpdateApiKeyInput!): AdminApiKey!
+  adminUpdateUser(id: ID!, input: UpdateUserInput!): AdminUser!
+}
+
+type PaginatedApiKeys {
+  data: [AdminApiKey!]!
+  limit: Int!
+  page: Int!
+  total: Int!
+}
+
+type PaginatedUsers {
+  data: [AdminUser!]!
+  limit: Int!
+  page: Int!
+  total: Int!
+}
+
 type Query {
+  adminApiKey(id: ID!): AdminApiKeyDetail!
+  adminApiKeys(enabled: Boolean, limit: Int, page: Int, userId: ID): PaginatedApiKeys!
+  adminErrorLogs(cursor: String, from: String, limit: Int, to: String): AdminLogPage!
+  adminGtfsStatus: GtfsStatus!
+  adminHealth: SystemHealth!
+  adminLogs(cursor: String, from: String, keyId: ID, limit: Int, method: String, path: String, statusCode: Int, to: String, userId: ID): AdminLogPage!
+  adminMe: AdminUser!
+  adminStatsEndpoints(from: String, limit: Int, to: String): [EndpointStat!]!
+  adminStatsKeys(from: String, limit: Int, to: String): [KeyStat!]!
+  adminStatsOverview: AdminOverviewStats!
+  adminStatsUsage(from: String!, granularity: UsageGranularity!, to: String!): [UsageBucket!]!
+  adminStatsUsers(from: String, limit: Int, to: String): [UserStat!]!
+  adminUser(id: ID!): AdminUserDetail!
+  adminUsers(limit: Int, page: Int, role: String, search: String): PaginatedUsers!
+
   """Get departure board for a stop."""
   departures(itdDate: String, itdTime: String, stopId: String, stopName: String): [DepartureObject!]!
 
@@ -244,6 +399,17 @@ type StopTimeUpdateObject {
   stopSequence: Int
 }
 
+type SystemHealth {
+  checks: [SystemHealthCheck!]!
+  healthy: Boolean!
+}
+
+type SystemHealthCheck {
+  latencyMs: Int!
+  name: String!
+  status: String!
+}
+
 type TrackedTripObject {
   airConditioned: Boolean
 
@@ -322,6 +488,34 @@ type TripUpdateObject {
 
   """Vehicle label / set number"""
   vehicleLabel: String
+}
+
+input UpdateApiKeyInput {
+  enabled: Boolean
+  permissions: String
+  rateLimitMax: Int
+}
+
+input UpdateUserInput {
+  banned: Boolean
+  role: String
+}
+
+type UsageBucket {
+  count: Int!
+  errors: Int!
+  timestamp: String!
+}
+
+enum UsageGranularity {
+  DAY
+  HOUR
+}
+
+type UserStat {
+  count: Int!
+  userId: String!
+  userName: String!
 }
 
 type VehiclePositionObject {

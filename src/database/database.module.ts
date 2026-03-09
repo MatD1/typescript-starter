@@ -4,10 +4,11 @@ import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import * as authSchema from './schema/auth.schema';
 import * as gtfsSchema from './schema/gtfs.schema';
+import * as requestLogSchema from './schema/request-log.schema';
 
 export const DRIZZLE = Symbol('DRIZZLE');
 
-const schema = { ...authSchema, ...gtfsSchema };
+const schema = { ...authSchema, ...gtfsSchema, ...requestLogSchema };
 
 export type AppSchema = typeof schema;
 export type DrizzleDB = NodePgDatabase<AppSchema>;
