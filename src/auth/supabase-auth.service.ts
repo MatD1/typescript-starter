@@ -1,6 +1,11 @@
 import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as jwt from 'jsonwebtoken';
+import {
+  jwtVerify,
+  createRemoteJWKSet,
+  decodeProtectedHeader,
+  type JWTPayload,
+} from 'jose';
 import { eq } from 'drizzle-orm';
 import { AuthService } from './auth.service';
 import { DRIZZLE } from '../database/database.module';
@@ -11,33 +16,67 @@ import {
 } from '../database/schema/auth.schema';
 import { randomUUID } from 'crypto';
 
-interface SupabaseJwtPayload extends jwt.JwtPayload {
-  sub: string;
+interface SupabaseJwtPayload extends JWTPayload {
   email?: string;
   user_metadata?: { full_name?: string; name?: string; avatar_url?: string };
 }
 
+const ASYMMETRIC_ALGORITHMS = new Set(['ES256', 'RS256', 'EdDSA']);
+
 @Injectable()
 export class SupabaseAuthService {
+  private jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
+
   constructor(
     private readonly configService: ConfigService,
     private readonly authService: AuthService,
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
   ) {}
 
+  private getJwks(): ReturnType<typeof createRemoteJWKSet> {
+    if (!this.jwks) {
+      const supabaseUrl = this.configService.get<string>('supabase.url');
+      if (!supabaseUrl) {
+        throw new UnauthorizedException('Supabase URL not configured');
+      }
+      const jwksUrl = new URL(
+        '/auth/v1/.well-known/jwks.json',
+        supabaseUrl,
+      );
+      this.jwks = createRemoteJWKSet(jwksUrl);
+    }
+    return this.jwks;
+  }
+
+  private async verifyToken(token: string): Promise<SupabaseJwtPayload> {
+    const header = decodeProtectedHeader(token);
+    const alg = header.alg;
+
+    if (alg && ASYMMETRIC_ALGORITHMS.has(alg)) {
+      const { payload } = await jwtVerify(token, this.getJwks());
+      return payload as SupabaseJwtPayload;
+    }
+
+    const jwtSecret = this.configService.get<string>('supabase.jwtSecret');
+    if (!jwtSecret) {
+      throw new UnauthorizedException(
+        'Supabase JWT secret not configured for HS256 verification',
+      );
+    }
+
+    const secret = new TextEncoder().encode(jwtSecret);
+    const { payload } = await jwtVerify(token, secret, {
+      algorithms: ['HS256'],
+    });
+    return payload as SupabaseJwtPayload;
+  }
+
   async exchangeSupabaseToken(
     supabaseToken: string,
   ): Promise<{ sessionToken: string; userId: string }> {
-    const jwtSecret = this.configService.get<string>('supabase.jwtSecret');
-    if (!jwtSecret) {
-      throw new UnauthorizedException('Supabase JWT secret not configured');
-    }
-
     let payload: SupabaseJwtPayload;
     try {
-      payload = jwt.verify(supabaseToken, jwtSecret, {
-        algorithms: ['HS256'],
-      }) as SupabaseJwtPayload;
+      payload = await this.verifyToken(supabaseToken);
     } catch {
       throw new UnauthorizedException('Invalid or expired Supabase JWT');
     }
