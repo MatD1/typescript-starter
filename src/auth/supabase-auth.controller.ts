@@ -24,9 +24,9 @@ export class SupabaseAuthController {
 
   @Post('exchange')
   @ApiOperation({
-    summary: 'Exchange a Supabase JWT for a better-auth session token',
+    summary: 'Exchange a Supabase JWT for session tokens',
     description:
-      'Verifies the Supabase JWT, upserts the user in our database, and returns a better-auth session token that can be used to create API keys.',
+      'Verifies the Supabase JWT, upserts the user in our database, and returns sessionToken, refreshToken, and expiresAt. Use sessionToken for API calls; use refreshToken with POST /auth/refresh to obtain new tokens before expiry.',
   })
   async exchange(@Body() dto: SupabaseExchangeDto) {
     if (!dto.token) throw new BadRequestException('token is required');

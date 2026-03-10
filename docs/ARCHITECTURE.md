@@ -4,7 +4,7 @@
 
 A NestJS application that wraps the NSW Open Data Transport APIs, exposing a
 dual GraphQL + REST interface. Authentication uses `better-auth` (email/password
-or Supabase JWT exchange) with API key–based transport authorisation.
+or Supabase JWT exchange). Transport endpoints accept Bearer session tokens or API keys (for server-to-server use).
 
 ---
 
@@ -55,17 +55,16 @@ AppModule
 
 ### Authenticated REST request
 ```
-Flutter app
-  │  X-API-Key: nsw_xxx
+Client (Flutter app, server, etc.)
+  │  Authorization: Bearer <session-token>  OR  X-API-Key: nsw_xxx
   ▼
 Express (compression middleware)
   │
   ▼
 ApiKeyGuard
-  │  1. Check Redis cache (TTL 60s)  ──hit──▶  skip DB
-  │  2. Miss → SELECT apikey WHERE key = ?
-  │  3. Cache result for 60s
-  │  4. Fire-and-forget requestCount++ update
+  │  If Bearer nsw_xxx → verifyApiKey() [cache 60s]
+  │  If Bearer <other> → getUserFromSession() [cache 120s]
+  │  If X-API-Key → verifyApiKey() [cache 60s]
   ▼
 ThrottlerGuard  (120 req/min per key, Redis-backed)
   ▼
@@ -91,18 +90,17 @@ Flutter (supabase_flutter)
   │  1. User signs in via Supabase
   │  2. Supabase returns JWT
   ▼
-POST /api/v1/auth/supabase/exchange  { token: "<supabase-jwt>" }
+POST /auth/supabase/exchange  { token: "<supabase-jwt>" }
   │  SupabaseAuthService.exchangeSupabaseToken()
   │    ├── jwt.verify(token, SUPABASE_JWT_SECRET)
-  │    ├── upsert user in `user` table
-  │    └── INSERT session → returns { sessionToken, userId }
+  │    ├── upsert user in `users` table
+  │    └── INSERT session → returns { sessionToken, refreshToken, expiresAt, userId }
   ▼
-POST /api/v1/api-keys  Authorization: Bearer <sessionToken>
-  │  ApiKeyController → ApiKeyService.createApiKey()
+Option A: Use Bearer <sessionToken> on transport endpoints (1h expiry, refresh before)
+Option B: POST /api/v1/api-keys  Authorization: Bearer <sessionToken>
   │    └── returns { key: "nsw_xxx...", id, start }
   ▼
-Store nsw_xxx in Flutter secure storage
-Use X-API-Key: nsw_xxx on all subsequent requests
+Store nsw_xxx in Flutter secure storage; use X-API-Key for server-to-server
 ```
 
 ---
@@ -189,6 +187,8 @@ the following normalisation:
 | `NSW_TRANSPORT_BASE_URL`  |          | `https://api.transport.nsw.gov.au` | NSW API base URL                       |
 | `SUPABASE_URL`            | ✓ (SSO)  | —                                | Supabase project URL                     |
 | `SUPABASE_JWT_SECRET`     | ✓ (SSO)  | —                                | Supabase JWT secret for token exchange   |
+| `SESSION_TTL_SECONDS`     |          | `3600`                           | Session token lifetime (1 hour)          |
+| `REFRESH_TOKEN_TTL_SECONDS`|         | `604800`                         | Refresh token lifetime (7 days)          |
 | `ALLOWED_ORIGINS`         |          | `*`                              | Comma-separated CORS allowed origins     |
 | `PORT`                    |          | `3000`                           | HTTP server port                         |
 | `NODE_ENV`                |          | `development`                    | Set to `production` to disable playground|

@@ -20,6 +20,7 @@ import {
   session as sessionTable,
 } from '../database/schema/auth.schema';
 import { randomUUID } from 'crypto';
+import { CacheService } from '../cache/cache.service';
 
 interface SupabaseJwtPayload extends JWTPayload {
   email?: string;
@@ -36,6 +37,7 @@ export class SupabaseAuthService {
     private readonly configService: ConfigService,
     private readonly authService: AuthService,
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
+    private readonly cache: CacheService,
   ) {}
 
   private getJwks(): ReturnType<typeof createRemoteJWKSet> {
@@ -78,7 +80,12 @@ export class SupabaseAuthService {
 
   async exchangeSupabaseToken(
     supabaseToken: string,
-  ): Promise<{ sessionToken: string; userId: string }> {
+  ): Promise<{
+    sessionToken: string;
+    refreshToken: string;
+    expiresAt: Date;
+    userId: string;
+  }> {
     let payload: SupabaseJwtPayload;
     try {
       payload = await this.verifyToken(supabaseToken);
@@ -95,6 +102,16 @@ export class SupabaseAuthService {
       payload.user_metadata?.full_name ??
       payload.user_metadata?.name ??
       email.split('@')[0];
+
+    const ttlSeconds = this.configService.get<number>('session.ttlSeconds') ?? 3600;
+    const refreshTtlSeconds =
+      this.configService.get<number>('session.refreshTokenTtlSeconds') ?? 604800;
+
+    if (ttlSeconds < 300 || ttlSeconds > 86400) {
+      throw new InternalServerErrorException(
+        'SESSION_TTL_SECONDS must be between 300 and 86400',
+      );
+    }
 
     try {
       const existingUsers = await this.db
@@ -120,22 +137,88 @@ export class SupabaseAuthService {
       }
 
       const sessionToken = randomUUID();
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const refreshToken = randomUUID();
+      const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+      const refreshTokenExpiresAt = new Date(
+        Date.now() + refreshTtlSeconds * 1000,
+      );
 
       await this.db.insert(sessionTable).values({
         id: randomUUID(),
         userId,
         token: sessionToken,
         expiresAt,
+        refreshToken,
+        refreshTokenExpiresAt,
         createdAt: new Date(),
         updatedAt: new Date(),
       });
 
-      return { sessionToken, userId };
+      return { sessionToken, refreshToken, expiresAt, userId };
     } catch (err) {
       throw new InternalServerErrorException(
         'Database error during token exchange',
       );
     }
+  }
+
+  async refreshSession(refreshToken: string): Promise<{
+    sessionToken: string;
+    refreshToken: string;
+    expiresAt: Date;
+  }> {
+    const rows = await this.db
+      .select()
+      .from(sessionTable)
+      .where(eq(sessionTable.refreshToken, refreshToken))
+      .limit(1);
+
+    if (!rows.length) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    const oldSession = rows[0];
+    const now = new Date();
+
+    if (
+      !oldSession.refreshTokenExpiresAt ||
+      oldSession.refreshTokenExpiresAt < now
+    ) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    const ttlSeconds =
+      this.configService.get<number>('session.ttlSeconds') ?? 3600;
+    const refreshTtlSeconds =
+      this.configService.get<number>('session.refreshTokenTtlSeconds') ??
+      604800;
+
+    const newSessionToken = randomUUID();
+    const newRefreshToken = randomUUID();
+    const newExpiresAt = new Date(Date.now() + ttlSeconds * 1000);
+    const newRefreshTokenExpiresAt = new Date(
+      Date.now() + refreshTtlSeconds * 1000,
+    );
+
+    await this.db.insert(sessionTable).values({
+      id: randomUUID(),
+      userId: oldSession.userId,
+      token: newSessionToken,
+      expiresAt: newExpiresAt,
+      refreshToken: newRefreshToken,
+      refreshTokenExpiresAt: newRefreshTokenExpiresAt,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await this.db.delete(sessionTable).where(eq(sessionTable.id, oldSession.id));
+
+    await this.cache.del(`session:user:${oldSession.token}`);
+
+    return {
+      sessionToken: newSessionToken,
+      refreshToken: newRefreshToken,
+      expiresAt: newExpiresAt,
+    };
   }
 }

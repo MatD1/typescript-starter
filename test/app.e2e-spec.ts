@@ -56,6 +56,7 @@ describe('NSW Transport API (e2e smoke)', () => {
                 ? { valid: true, userId: 'u1', keyId: 'k1' }
                 : { valid: false },
             ),
+            getUserFromSession: jest.fn().mockResolvedValue(null),
           },
         },
         { provide: APP_GUARD, useClass: ApiKeyGuard },
@@ -120,7 +121,7 @@ describe('NSW Transport API (e2e smoke)', () => {
       .set('X-API-Key', 'sk_notnsw')
       .expect(401);
 
-    expect(res.body.message).toContain('API key');
+    expect(res.body.message).toMatch(/Invalid|session token|API-Key/);
   });
 
   it('returns 401 when API key has nsw_ prefix but is unknown', async () => {

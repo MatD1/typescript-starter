@@ -175,7 +175,7 @@ describe('Realtime endpoints (e2e)', () => {
       .get('/api/v1/realtime/vehicles')
       .expect(401);
     expect(res.body.statusCode).toBe(401);
-    expect(res.body.message).toContain('API key');
+    expect(res.body.message).toMatch(/API-Key|Bearer|Provide/);
   });
 
   it('GET /api/v1/realtime/vehicles → 401 with invalid API key', async () => {

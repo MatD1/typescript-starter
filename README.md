@@ -6,8 +6,8 @@ A fully-functional **GraphQL + REST** wrapper for the [NSW Open Data Transport](
 
 | Category | Capability |
 |---|---|
-| **Auth** | `better-auth` email/password + Supabase SSO JWT exchange |
-| **API Keys** | Create, list, revoke per-user API keys; all transport endpoints require `X-API-Key` |
+| **Auth** | `better-auth` email/password + Supabase SSO JWT exchange; short-lived sessions with refresh tokens |
+| **API Access** | Bearer session token or `X-API-Key`; API keys for server-to-server / trusted apps |
 | **Realtime** | Live vehicle positions & trip updates (GTFS-RT protobuf, all modes) |
 | **Disruptions** | Service alerts from GTFS-RT alerts feed |
 | **Trip Planner** | Journey planning, departure monitor, stop finder, coordinate search |
@@ -89,26 +89,40 @@ Authorization: Bearer <session-token>
 
 ### Step 3 — Call Transport Endpoints
 
+Use either a session token (Bearer) or an API key:
+
 ```bash
+# With session token (end users)
+GET /api/v1/realtime/vehicles?mode=sydneytrains
+Authorization: Bearer <session-token>
+
+# With API key (server-to-server / trusted apps)
 GET /api/v1/realtime/vehicles?mode=sydneytrains
 X-API-Key: nsw_...
 ```
-
-Alternatively pass it as `Authorization: Bearer nsw_...`.
 
 ### Supabase SSO
 
 ```bash
 POST /auth/supabase/exchange
-Authorization: Bearer <supabase-jwt>
-# Returns { "token": "<better-auth-session-token>", ... }
+Content-Type: application/json
+{ "token": "<supabase-jwt>" }
+# Returns { "sessionToken", "refreshToken", "expiresAt", "userId" }
+```
+
+Session tokens expire in 1 hour (configurable). Use the refresh token to obtain new tokens:
+
+```bash
+POST /auth/refresh
+Authorization: Bearer <refresh-token>
+# Returns { "sessionToken", "refreshToken", "expiresAt" }
 ```
 
 ---
 
 ## REST API Reference
 
-All endpoints (except `/auth/*`) are under `/api/v1` and require `X-API-Key`.
+All transport endpoints (except `/auth/*`) are under `/api/v1` and require either `Authorization: Bearer <session-token>` or `X-API-Key: nsw_xxx`.
 
 ### Realtime
 | Method | Path | Description |
@@ -189,6 +203,8 @@ query {
 | `BETTER_AUTH_URL` | Public URL of this server |
 | `SUPABASE_URL` | Your Supabase project URL |
 | `SUPABASE_JWT_SECRET` | Supabase JWT secret (from project settings) |
+| `SESSION_TTL_SECONDS` | Session token lifetime (default: 3600 = 1 hour) |
+| `REFRESH_TOKEN_TTL_SECONDS` | Refresh token lifetime (default: 604800 = 7 days) |
 | `ALLOWED_ORIGINS` | Comma-separated CORS origins |
 
 ---

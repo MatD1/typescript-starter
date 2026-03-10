@@ -30,7 +30,9 @@ async function bootstrap() {
   // internally and will fail if Express already consumed the stream.
   // Our own /auth/supabase/* routes still need standard body parsing.
   const isBetterAuthRoute = (path: string) =>
-    path.startsWith('/auth/') && !path.startsWith('/auth/supabase/');
+    path.startsWith('/auth/') &&
+    !path.startsWith('/auth/supabase/') &&
+    path !== '/auth/refresh';
 
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (isBetterAuthRoute(req.path)) return next();
@@ -61,10 +63,14 @@ async function bootstrap() {
   const config = new DocumentBuilder()
     .setTitle('NSW Transport API')
     .setDescription(
-      'A fully-functional GraphQL + REST wrapper for NSW Open Data Transport. Authenticate with better-auth (email/password or Supabase SSO) to obtain a session token, then create an API key to call transport endpoints.',
+      'A fully-functional GraphQL + REST wrapper for NSW Open Data Transport. Authenticate with better-auth (email/password or Supabase SSO) to obtain a session token, then call transport endpoints with Bearer token or create an API key for server-to-server use.',
     )
     .setVersion('1.0')
     .addApiKey({ type: 'apiKey', in: 'header', name: 'X-API-Key' }, 'X-API-Key')
+    .addBearerAuth(
+      { type: 'http', scheme: 'bearer', bearerFormat: 'session-token' },
+      'Bearer',
+    )
     .addTag('realtime', 'Live vehicle positions and trip updates')
     .addTag('disruptions', 'Service alerts and disruptions')
     .addTag('trip-planner', 'Journey planning and departure boards')

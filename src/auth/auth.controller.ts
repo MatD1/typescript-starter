@@ -15,7 +15,10 @@ export class AuthController {
     @Res() res: Response,
     @Next() next: NextFunction,
   ) {
-    if (req.path.startsWith('/auth/supabase/')) {
+    if (
+      req.path.startsWith('/auth/supabase/') ||
+      req.path === '/auth/refresh'
+    ) {
       return next();
     }
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument

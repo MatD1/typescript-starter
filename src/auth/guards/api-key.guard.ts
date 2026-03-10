@@ -25,24 +25,38 @@ export class ApiKeyGuard implements CanActivate {
     if (isPublic) return true;
 
     const req = this.getRequest(context);
-    const apiKeyValue =
-      (req.headers['x-api-key'] as string | undefined) ??
-      req.headers['authorization']?.replace(/^Bearer\s+nsw_/i, 'nsw_');
+    const apiKeyValue = req.headers['x-api-key'] as string | undefined;
+    const bearerValue = req.headers['authorization']?.startsWith('Bearer ')
+      ? req.headers['authorization'].slice(7).trim()
+      : undefined;
 
-    if (!apiKeyValue?.startsWith('nsw_')) {
+    const credential = apiKeyValue ?? bearerValue;
+
+    if (!credential) {
       throw new UnauthorizedException(
-        'Missing API key. Provide X-API-Key: nsw_xxx header.',
+        'Provide X-API-Key: nsw_xxx or Authorization: Bearer <session-token>',
       );
     }
 
-    const result = await this.apiKeyService.verifyApiKey(apiKeyValue);
-    if (!result.valid) {
-      throw new UnauthorizedException('Invalid or expired API key');
+    if (credential.startsWith('nsw_')) {
+      const result = await this.apiKeyService.verifyApiKey(credential);
+      if (!result.valid) {
+        throw new UnauthorizedException('Invalid or expired API key');
+      }
+      (req as unknown as Record<string, unknown>)['user'] = {
+        userId: result.userId,
+        keyId: result.keyId,
+      };
+      return true;
     }
 
+    const userId = await this.apiKeyService.getUserFromSession(credential);
+    if (!userId) {
+      throw new UnauthorizedException('Invalid or expired session token');
+    }
     (req as unknown as Record<string, unknown>)['user'] = {
-      userId: result.userId,
-      keyId: result.keyId,
+      userId,
+      keyId: undefined,
     };
     return true;
   }

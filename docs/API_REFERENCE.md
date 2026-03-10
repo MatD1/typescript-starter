@@ -1,6 +1,6 @@
 # NSW Transport API — REST API Reference
 
-All transport endpoints require **`X-API-Key: nsw_xxx`** in the request header.  
+Transport endpoints require either **`Authorization: Bearer <session-token>`** or **`X-API-Key: nsw_xxx`**.  
 Auth endpoints are public (no key required).  
 Base path: `http://localhost:3000`
 
@@ -55,7 +55,7 @@ Content-Type: application/json
 Use this from a Flutter app that already has a Supabase session.
 
 ```http
-POST /api/v1/auth/supabase/exchange
+POST /auth/supabase/exchange
 Content-Type: application/json
 
 { "token": "<supabase-jwt>" }
@@ -63,7 +63,43 @@ Content-Type: application/json
 
 **Response** `200`
 ```json
-{ "sessionToken": "<session-token>", "userId": "..." }
+{
+  "sessionToken": "<session-token>",
+  "refreshToken": "<refresh-token>",
+  "expiresAt": "2025-03-11T14:00:00.000Z",
+  "userId": "..."
+}
+```
+
+Session tokens expire in 1 hour. Store the refresh token securely and use it to obtain new tokens before expiry.
+
+---
+
+### Refresh session tokens
+
+Exchange a valid refresh token for new session and refresh tokens. Uses token rotation: the old refresh token is invalidated.
+
+```http
+POST /auth/refresh
+Authorization: Bearer <refresh-token>
+```
+
+Or with body:
+
+```http
+POST /auth/refresh
+Content-Type: application/json
+
+{ "refreshToken": "<refresh-token>" }
+```
+
+**Response** `200`
+```json
+{
+  "sessionToken": "<new-session-token>",
+  "refreshToken": "<new-refresh-token>",
+  "expiresAt": "2025-03-11T15:00:00.000Z"
+}
 ```
 
 ---
@@ -145,8 +181,9 @@ Live vehicle positions from GTFS-RT feed.
 
 ```http
 GET /api/v1/realtime/vehicles?mode=sydneytrains
-X-API-Key: nsw_xxx
+Authorization: Bearer <session-token>
 ```
+Or: `X-API-Key: nsw_xxx`
 
 **Response** `200` — array of `VehiclePosition`
 ```json

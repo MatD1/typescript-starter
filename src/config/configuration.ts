@@ -25,4 +25,12 @@ export default () => ({
     url: process.env.SUPABASE_URL,
     jwtSecret: process.env.SUPABASE_JWT_SECRET,
   },
+
+  session: {
+    ttlSeconds: parseInt(process.env.SESSION_TTL_SECONDS ?? '3600', 10),
+    refreshTokenTtlSeconds: parseInt(
+      process.env.REFRESH_TOKEN_TTL_SECONDS ?? '604800',
+      10,
+    ), // 7 days
+  },
 });
