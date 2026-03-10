@@ -10,7 +10,7 @@ import { CacheModule } from '../cache/cache.module';
 
 @Module({
   imports: [CacheModule],
-  controllers: [AuthController, SupabaseAuthController, ApiKeyController],
+  controllers: [SupabaseAuthController, AuthController, ApiKeyController],
   providers: [AuthService, SupabaseAuthService, ApiKeyService, ApiKeyGuard],
   exports: [AuthService, ApiKeyService, ApiKeyGuard],
 })

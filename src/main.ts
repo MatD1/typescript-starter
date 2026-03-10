@@ -17,14 +17,18 @@ async function bootstrap() {
   const jsonParser = json();
   const urlencodedParser = urlencoded({ extended: true });
 
-  // Apply body parsers to every route EXCEPT /auth/* — better-auth parses
-  // its own body internally and will fail if Express already consumed the stream.
+  // Skip body parsing only for better-auth routes — it parses its own body
+  // internally and will fail if Express already consumed the stream.
+  // Our own /auth/supabase/* routes still need standard body parsing.
+  const isBetterAuthRoute = (path: string) =>
+    path.startsWith('/auth/') && !path.startsWith('/auth/supabase/');
+
   app.use((req: Request, res: Response, next: NextFunction) => {
-    if (req.path.startsWith('/auth/')) return next();
+    if (isBetterAuthRoute(req.path)) return next();
     return jsonParser(req, res, next);
   });
   app.use((req: Request, res: Response, next: NextFunction) => {
-    if (req.path.startsWith('/auth/')) return next();
+    if (isBetterAuthRoute(req.path)) return next();
     return urlencodedParser(req, res, next);
   });
 
