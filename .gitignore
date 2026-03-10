@@ -402,3 +402,5 @@ tsconfig.build.tsbuildinfo
 drizzle.config.js
 drizzle.config.js.map
 drizzle.config.d.ts
+.pnpm-store
+pnpm-lock.yaml

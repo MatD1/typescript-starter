@@ -114,27 +114,30 @@ export class SupabaseAuthService {
     }
 
     try {
-      const existingUsers = await this.db
-        .select()
-        .from(userTable)
-        .where(eq(userTable.email, email))
-        .limit(1);
-
-      let userId: string;
-      if (existingUsers.length > 0) {
-        userId = existingUsers[0].id;
-      } else {
-        userId = randomUUID();
-        await this.db.insert(userTable).values({
-          id: userId,
+      await this.db
+        .insert(userTable)
+        .values({
+          id: randomUUID(),
           name,
           email,
           emailVerified: true,
           image: payload.user_metadata?.avatar_url ?? null,
           createdAt: new Date(),
           updatedAt: new Date(),
-        });
+        })
+        .onConflictDoNothing({ target: userTable.email });
+
+      const [resolvedUser] = await this.db
+        .select()
+        .from(userTable)
+        .where(eq(userTable.email, email))
+        .limit(1);
+
+      if (!resolvedUser) {
+        throw new InternalServerErrorException('Failed to find or create user');
       }
+
+      const resolvedUserId = resolvedUser.id;
 
       const sessionToken = randomUUID();
       const refreshToken = randomUUID();
@@ -145,7 +148,7 @@ export class SupabaseAuthService {
 
       await this.db.insert(sessionTable).values({
         id: randomUUID(),
-        userId,
+        userId: resolvedUserId,
         token: sessionToken,
         expiresAt,
         refreshToken,
@@ -154,7 +157,7 @@ export class SupabaseAuthService {
         updatedAt: new Date(),
       });
 
-      return { sessionToken, refreshToken, expiresAt, userId };
+      return { sessionToken, refreshToken, expiresAt, userId: resolvedUserId };
     } catch (err) {
       throw new InternalServerErrorException(
         'Database error during token exchange',
