@@ -1,4 +1,9 @@
-import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   jwtVerify,
@@ -91,40 +96,46 @@ export class SupabaseAuthService {
       payload.user_metadata?.name ??
       email.split('@')[0];
 
-    const existingUsers = await this.db
-      .select()
-      .from(userTable)
-      .where(eq(userTable.email, email))
-      .limit(1);
+    try {
+      const existingUsers = await this.db
+        .select()
+        .from(userTable)
+        .where(eq(userTable.email, email))
+        .limit(1);
 
-    let userId: string;
-    if (existingUsers.length > 0) {
-      userId = existingUsers[0].id;
-    } else {
-      userId = randomUUID();
-      await this.db.insert(userTable).values({
-        id: userId,
-        name,
-        email,
-        emailVerified: true,
-        image: payload.user_metadata?.avatar_url ?? null,
+      let userId: string;
+      if (existingUsers.length > 0) {
+        userId = existingUsers[0].id;
+      } else {
+        userId = randomUUID();
+        await this.db.insert(userTable).values({
+          id: userId,
+          name,
+          email,
+          emailVerified: true,
+          image: payload.user_metadata?.avatar_url ?? null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+      }
+
+      const sessionToken = randomUUID();
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+      await this.db.insert(sessionTable).values({
+        id: randomUUID(),
+        userId,
+        token: sessionToken,
+        expiresAt,
         createdAt: new Date(),
         updatedAt: new Date(),
       });
+
+      return { sessionToken, userId };
+    } catch (err) {
+      throw new InternalServerErrorException(
+        'Database error during token exchange',
+      );
     }
-
-    const sessionToken = randomUUID();
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
-    await this.db.insert(sessionTable).values({
-      id: randomUUID(),
-      userId,
-      token: sessionToken,
-      expiresAt,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-
-    return { sessionToken, userId };
   }
 }

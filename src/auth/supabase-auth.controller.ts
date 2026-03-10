@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  HttpException,
   Post,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -32,6 +33,9 @@ export class SupabaseAuthController {
     try {
       return await this.supabaseAuthService.exchangeSupabaseToken(dto.token);
     } catch (err) {
+      if (err instanceof HttpException) {
+        throw err;
+      }
       throw new UnauthorizedException(
         err instanceof Error ? err.message : 'Invalid Supabase token',
       );

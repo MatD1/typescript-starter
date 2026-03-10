@@ -5,8 +5,17 @@ import type { Request, Response, NextFunction } from 'express';
 import { json, urlencoded } from 'express';
 import compression from 'compression';
 import { AppModule } from './app.module';
+import { runMigrations } from './database/migration.runner';
 
 async function bootstrap() {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (databaseUrl && process.env.RUN_MIGRATIONS_ON_STARTUP !== 'false') {
+    await runMigrations(databaseUrl, {
+      maxRetries: parseInt(process.env.MIGRATION_MAX_RETRIES ?? '4', 10),
+      retryDelayMs: parseInt(process.env.MIGRATION_RETRY_DELAY_MS ?? '3000', 10),
+    });
+  }
+
   // Disable NestJS's built-in body parser so better-auth can read the raw
   // request body on /auth/* routes via its own toNodeHandler.
   const app = await NestFactory.create(AppModule, { bodyParser: false });
