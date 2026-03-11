@@ -27,6 +27,17 @@ export class AuthService implements OnModuleInit {
       basePath: '/auth',
       trustedOrigins: [baseURL, ...extraOrigins],
 
+      user: {
+        additionalFields: {
+          role: {
+            type: 'string',
+            required: false,
+            defaultValue: 'user',
+            input: false, // prevent users from setting their own role on sign-up
+          },
+        },
+      },
+
       // Disable CSRF check in development so API testing tools (Postman,
       // curl, Insomnia) work without needing to send an Origin header.
       // In production the check stays on for proper CSRF protection.

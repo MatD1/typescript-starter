@@ -38,7 +38,7 @@ export class SupabaseAuthService {
     private readonly authService: AuthService,
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly cache: CacheService,
-  ) {}
+  ) { }
 
   private getJwks(): ReturnType<typeof createRemoteJWKSet> {
     if (!this.jwks) {
@@ -85,6 +85,7 @@ export class SupabaseAuthService {
     refreshToken: string;
     expiresAt: Date;
     userId: string;
+    role: string;
   }> {
     let payload: SupabaseJwtPayload;
     try {
@@ -157,7 +158,7 @@ export class SupabaseAuthService {
         updatedAt: new Date(),
       });
 
-      return { sessionToken, refreshToken, expiresAt, userId: resolvedUserId };
+      return { sessionToken, refreshToken, expiresAt, userId: resolvedUserId, role: resolvedUser.role };
     } catch (err) {
       throw new InternalServerErrorException(
         'Database error during token exchange',
@@ -169,6 +170,7 @@ export class SupabaseAuthService {
     sessionToken: string;
     refreshToken: string;
     expiresAt: Date;
+    role: string;
   }> {
     const rows = await this.db
       .select()
@@ -218,10 +220,17 @@ export class SupabaseAuthService {
 
     await this.cache.del(`session:user:${oldSession.token}`);
 
+    const [refreshedUser] = await this.db
+      .select({ role: userTable.role })
+      .from(userTable)
+      .where(eq(userTable.id, oldSession.userId))
+      .limit(1);
+
     return {
       sessionToken: newSessionToken,
       refreshToken: newRefreshToken,
       expiresAt: newExpiresAt,
+      role: refreshedUser?.role ?? 'user',
     };
   }
 }

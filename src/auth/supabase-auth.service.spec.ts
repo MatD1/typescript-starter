@@ -91,6 +91,7 @@ describe('SupabaseAuthService', () => {
       const result = await service.exchangeSupabaseToken('valid-supabase-jwt');
 
       expect(result.userId).toBe(EXISTING_USER_ID);
+      expect(result.role).toBe('user');
       expect(result.sessionToken).toBeDefined();
       expect(result.refreshToken).toBeDefined();
       expect(result.expiresAt).toBeInstanceOf(Date);
