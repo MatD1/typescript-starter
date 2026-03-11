@@ -47,8 +47,13 @@ async function bootstrap() {
     exclude: ['/auth/(.*)', '/graphql'],
   });
 
+  // CORS: restrict to ALLOWED_ORIGINS (comma-separated) when set;
+  // falls back to '*' (allow all) for local development.
+  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map((o) =>
+    o.trim(),
+  );
   app.enableCors({
-    origin: process.env.ALLOWED_ORIGINS?.split(',') ?? '*',
+    origin: allowedOrigins?.length ? allowedOrigins : '*',
     credentials: true,
   });
 

@@ -13,12 +13,13 @@ export class AuthService implements OnModuleInit {
   constructor(
     private readonly configService: ConfigService,
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
-  ) {}
+  ) { }
 
   onModuleInit() {
     const baseURL =
       this.configService.get<string>('auth.url') ?? 'http://localhost:3000';
-    const extraOrigins = (process.env.ALLOWED_ORIGINS ?? '').split(',').filter(Boolean);
+    const extraOrigins =
+      this.configService.get<string[]>('cors.allowedOrigins') ?? [];
 
     this.auth = betterAuth({
       secret: this.configService.get<string>('auth.secret'),

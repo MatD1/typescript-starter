@@ -26,6 +26,14 @@ export default () => ({
     jwtSecret: process.env.SUPABASE_JWT_SECRET,
   },
 
+  cors: {
+    allowedOrigins: process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(',')
+        .map((o) => o.trim())
+        .filter(Boolean)
+      : [],
+  },
+
   session: {
     ttlSeconds: parseInt(process.env.SESSION_TTL_SECONDS ?? '3600', 10),
     refreshTokenTtlSeconds: parseInt(
