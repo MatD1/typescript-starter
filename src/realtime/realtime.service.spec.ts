@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { RealtimeService } from './realtime.service';
 import { GtfsRealtimeService } from '../transport/gtfs-realtime.service';
+import { GtfsStaticService } from '../gtfs-static/gtfs-static.service';
 import { CacheService } from '../cache/cache.service';
 import type { VehiclePosition, TripUpdate } from '../transport/nsw-gtfs-rt.types';
 
@@ -20,6 +21,13 @@ const mockGtfsRt = {
   getTripUpdates: jest.fn(),
 };
 
+const mockGtfsStatic = {
+  getIntercityRouteIds: jest.fn().mockResolvedValue(new Set<string>()),
+  getRouteMetadataMap: jest.fn().mockResolvedValue(
+    new Map<string, { lineCode: string; routeColour?: string }>(),
+  ),
+};
+
 /** Passthrough cache — always calls the factory and returns its value */
 const mockCacheService = {
   get: jest.fn().mockResolvedValue(null),
@@ -36,6 +44,7 @@ describe('RealtimeService', () => {
       providers: [
         RealtimeService,
         { provide: GtfsRealtimeService, useValue: mockGtfsRt },
+        { provide: GtfsStaticService, useValue: mockGtfsStatic },
         { provide: CacheService, useValue: mockCacheService },
       ],
     }).compile();
@@ -52,6 +61,20 @@ describe('RealtimeService', () => {
       expect(results).toHaveLength(1);
       expect(results[0].mode).toBe('sydneytrains');
       expect(results[0].vehicleId).toBe('V1');
+    });
+
+    it('adds lineCode and routeColour when route matches gtfs_routes', async () => {
+      mockGtfsStatic.getRouteMetadataMap.mockResolvedValue(
+        new Map([['T1', { lineCode: 'T1', routeColour: '009B77' }]]),
+      );
+      mockGtfsRt.getVehiclePositions.mockResolvedValue([
+        { ...baseVehicle, routeId: 'T1', vehicleId: 'V1' },
+      ]);
+
+      const results = await service.getVehiclePositions('sydneytrains');
+
+      expect(results[0].lineCode).toBe('T1');
+      expect(results[0].routeColour).toBe('009B77');
     });
 
     it('aggregates results across all modes when no mode specified', async () => {
@@ -73,6 +96,28 @@ describe('RealtimeService', () => {
       // Should still return the one that succeeded
       expect(results.length).toBe(1);
       expect(results[0].mode).toBe('sydneytrains');
+    });
+
+    it('filters sydneytrains by intercity routes when mode=intercity', async () => {
+      mockGtfsStatic.getIntercityRouteIds.mockResolvedValue(
+        new Set(['BMT_1', 'CCN_1']),
+      );
+      mockGtfsStatic.getRouteMetadataMap.mockResolvedValue(
+        new Map([['BMT_1', { lineCode: 'BMT', routeColour: 'FF6600' }]]),
+      );
+      mockGtfsRt.getVehiclePositions.mockResolvedValue([
+        { ...baseVehicle, routeId: 'BMT_1', vehicleId: 'V-IC' },
+        { ...baseVehicle, routeId: 'T1', vehicleId: 'V-SYD' },
+      ]);
+
+      const results = await service.getVehiclePositions('intercity');
+
+      expect(mockGtfsRt.getVehiclePositions).toHaveBeenCalledWith('sydneytrains');
+      expect(results).toHaveLength(1);
+      expect(results[0].routeId).toBe('BMT_1');
+      expect(results[0].mode).toBe('intercity');
+      expect(results[0].lineCode).toBe('BMT');
+      expect(results[0].routeColour).toBe('FF6600');
     });
 
     it('passes NSW extension fields (consist, trackDirection) through unchanged', async () => {
@@ -111,6 +156,28 @@ describe('RealtimeService', () => {
 
       const results = await service.getTripUpdates('sydneytrains');
       expect(results[0].delay).toBe(180);
+    });
+
+    it('filters sydneytrains by intercity routes when mode=intercity', async () => {
+      mockGtfsStatic.getIntercityRouteIds.mockResolvedValue(
+        new Set(['BMT_1', 'CCN_1']),
+      );
+      mockGtfsStatic.getRouteMetadataMap.mockResolvedValue(
+        new Map([['BMT_1', { lineCode: 'BMT', routeColour: 'FF6600' }]]),
+      );
+      mockGtfsRt.getTripUpdates.mockResolvedValue([
+        { ...baseTrip, tripId: 'T1', routeId: 'BMT_1' },
+        { ...baseTrip, tripId: 'T2', routeId: 'T1' },
+      ]);
+
+      const results = await service.getTripUpdates('intercity');
+
+      expect(mockGtfsRt.getTripUpdates).toHaveBeenCalledWith('sydneytrains');
+      expect(results).toHaveLength(1);
+      expect(results[0].routeId).toBe('BMT_1');
+      expect(results[0].mode).toBe('intercity');
+      expect(results[0].lineCode).toBe('BMT');
+      expect(results[0].routeColour).toBe('FF6600');
     });
 
     it('passes carriagePredictiveOccupancy through unchanged', async () => {
@@ -192,6 +259,9 @@ describe('RealtimeService', () => {
     });
 
     it('returns TrackedTripObject when vehicle is found by tripId', async () => {
+      mockGtfsStatic.getRouteMetadataMap.mockResolvedValue(
+        new Map([['T1', { lineCode: 'T1', routeColour: '009B77' }]]),
+      );
       mockGtfsRt.getVehiclePositions.mockResolvedValue([vehicleForTrip]);
       mockGtfsRt.getTripUpdates.mockResolvedValue([tripUpdateForTrip]);
 
@@ -199,6 +269,8 @@ describe('RealtimeService', () => {
       expect(result).not.toBeNull();
       expect(result!.tripId).toBe('TRIP-LIVE');
       expect(result!.mode).toBe('sydneytrains');
+      expect(result!.lineCode).toBe('T1');
+      expect(result!.routeColour).toBe('009B77');
     });
 
     it('joins vehicle position data into result', async () => {

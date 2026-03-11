@@ -71,7 +71,8 @@ export class TripPlannerController {
   @ApiQuery({
     name: 'type',
     required: false,
-    description: 'any | stop | poi | coord',
+    description:
+      'any (name search) | stop (query=stop ID) | coord (query=lon:lat:EPSG:4326) | poi',
   })
   findStops(@Query('query') query: string, @Query('type') type?: string) {
     return this.tripPlannerService.findStops({

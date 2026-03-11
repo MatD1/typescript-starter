@@ -168,14 +168,14 @@ describe('TripPlanner endpoints (e2e)', () => {
     );
   });
 
-  it('GET /api/v1/trip-planner/stop-finder → passes type param to service', async () => {
+  it('GET /api/v1/trip-planner/stop-finder → passes type param when query is valid stop ID', async () => {
     await request(app.getHttpServer())
-      .get('/api/v1/trip-planner/stop-finder?query=Central&type=stop')
+      .get('/api/v1/trip-planner/stop-finder?query=200060&type=stop')
       .set('X-API-Key', TEST_KEY)
       .expect(200);
 
     expect(mockTripPlannerService.findStops).toHaveBeenCalledWith(
-      expect.objectContaining({ name_sf: 'Central', type_sf: 'stop' }),
+      expect.objectContaining({ name_sf: '200060', type_sf: 'stop' }),
     );
   });
 

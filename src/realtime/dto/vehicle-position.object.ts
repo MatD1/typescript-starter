@@ -12,6 +12,18 @@ export class VehiclePositionObject {
   @Field({ nullable: true })
   routeId?: string;
 
+  @Field({
+    nullable: true,
+    description: 'Line code from GTFS (e.g. T1, CCN)',
+  })
+  lineCode?: string;
+
+  @Field({
+    nullable: true,
+    description: 'Route colour hex from GTFS (e.g. 009B77)',
+  })
+  routeColour?: string;
+
   @Field(() => Int, { nullable: true })
   directionId?: number;
 

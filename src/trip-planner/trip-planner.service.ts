@@ -1,4 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+} from '@nestjs/common';
 import { TransportService } from '../transport/transport.service';
 import { CacheService } from '../cache/cache.service';
 import { CacheTTL } from '../cache/cache.constants';
@@ -42,6 +46,7 @@ export class TripPlannerService {
   }
 
   async findStops(params: StopFinderParams): Promise<StopObject[]> {
+    this.validateStopFinderParams(params);
     const cacheKey = `tripplanner:stops:${JSON.stringify(params)}`;
     return this.cache.getOrSet(
       cacheKey,
@@ -83,6 +88,45 @@ export class TripPlannerService {
       },
       CacheTTL.STOP_SEARCH,
     );
+  }
+
+  /**
+   * Validates stop finder params per NSW v1 API semantics.
+   * type_sf constrains the expected name_sf format:
+   * - stop: query must be a stop ID (numeric), not a place name
+   * - coord: query must be lon:lat:EPSG:4326
+   * See docs/tripplanner_v1_swag_efa11_20251002.yml
+   */
+  private validateStopFinderParams(params: StopFinderParams): void {
+    const { name_sf, type_sf } = params;
+    if (!name_sf?.trim()) return;
+
+    const query = name_sf.trim();
+    const type = type_sf ?? 'any';
+
+    if (type === 'stop') {
+      if (!/^\d+$/.test(query)) {
+        this.logger.warn(
+          `findStops: type=stop requires a stop ID (e.g. 200060), got "${query.slice(0, 50)}${query.length > 50 ? '...' : ''}"`,
+        );
+        throw new BadRequestException(
+          'When type is "stop", query must be a stop ID (e.g. 200060). Use type "any" for name search.',
+        );
+      }
+    } else if (type === 'coord') {
+      if (!/^-?\d+\.?\d*:-?\d+\.?\d*:EPSG:4326$/i.test(query)) {
+        this.logger.warn(
+          `findStops: type=coord requires lon:lat:EPSG:4326, got "${query.slice(0, 50)}${query.length > 50 ? '...' : ''}"`,
+        );
+        throw new BadRequestException(
+          'When type is "coord", query must be in format lon:lat:EPSG:4326 (e.g. 151.206:-33.884:EPSG:4326). Use type "any" for name search.',
+        );
+      }
+    } else if (type === 'poi') {
+      this.logger.debug(
+        'findStops: type=poi has restrictive semantics; use type "any" for general text search',
+      );
+    }
   }
 
   private mapTrips(raw: NswApiRecord): TripResultObject[] {

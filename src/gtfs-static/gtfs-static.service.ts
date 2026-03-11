@@ -4,6 +4,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import * as unzipper from 'unzipper';
 import { parse } from 'csv-parse';
+import { inArray, eq, isNotNull, or } from 'drizzle-orm';
 import { DRIZZLE } from '../database/database.module';
 import type { DrizzleDB } from '../database/database.module';
 import {
@@ -13,6 +14,17 @@ import {
   gtfsCalendar,
   gtfsCalendarDate,
 } from '../database/schema/gtfs.schema';
+import { CacheService } from '../cache/cache.service';
+import { CacheTTL } from '../cache/cache.constants';
+
+/** NSW intercity lines: Blue Mountains, Central Coast, Hunter, South Coast, Southern Highlands */
+const INTERCITY_ROUTE_SHORT_NAMES = [
+  'BMT',
+  'CCN',
+  'HUN',
+  'SCO',
+  'SHL',
+] as const;
 
 const GTFS_STATIC_URLS: Record<string, string> = {
   sydneytrains:
@@ -37,6 +49,7 @@ export class GtfsStaticService {
     private readonly configService: ConfigService,
     private readonly httpService: HttpService,
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
+    private readonly cache: CacheService,
   ) {}
 
   async ingestAll(): Promise<
@@ -256,10 +269,83 @@ export class GtfsStaticService {
     }
   }
 
+  /**
+   * Returns route_id → metadata (lineCode, routeColour) for all routes with
+   * route_short_name or route_color. Used to enrich vehicle positions and
+   * trip updates. Cached 1 hour to avoid per-request DB queries.
+   */
+  async getRouteMetadataMap(): Promise<
+    Map<string, { lineCode: string; routeColour?: string }>
+  > {
+    const cacheKey = 'gtfs:route_metadata';
+    const cached =
+      await this.cache.get<Record<string, { lineCode: string; routeColour?: string }>>(
+        cacheKey,
+      );
+    if (cached) return new Map(Object.entries(cached));
+
+    const rows = await this.db
+      .select({
+        routeId: gtfsRoute.routeId,
+        routeShortName: gtfsRoute.routeShortName,
+        routeColor: gtfsRoute.routeColor,
+      })
+      .from(gtfsRoute)
+      .where(
+        or(
+          isNotNull(gtfsRoute.routeShortName),
+          isNotNull(gtfsRoute.routeColor),
+        ),
+      );
+
+    const map: Record<string, { lineCode: string; routeColour?: string }> = {};
+    for (const r of rows) {
+      if (r.routeId && (r.routeShortName || r.routeColor)) {
+        map[r.routeId] = {
+          lineCode: r.routeShortName ?? '',
+          routeColour: r.routeColor ?? undefined,
+        };
+      }
+    }
+    await this.cache.set(cacheKey, map, CacheTTL.ROUTE_MAP);
+    return new Map(Object.entries(map));
+  }
+
+  /**
+   * Returns route IDs for NSW intercity lines (BMT, CCN, HUN, SCO, SHL).
+   * Used to filter sydneytrains realtime data when mode=intercity is requested.
+   */
+  async getIntercityRouteIds(): Promise<Set<string>> {
+    const cacheKey = 'gtfs:intercity_route_ids';
+    const cached = await this.cache.get<string[]>(cacheKey);
+    if (cached) return new Set(cached);
+
+    const rows = await this.db
+      .select({ routeId: gtfsRoute.routeId })
+      .from(gtfsRoute)
+      .where(
+        inArray(
+          gtfsRoute.routeShortName,
+          [...INTERCITY_ROUTE_SHORT_NAMES],
+        ),
+      );
+
+    const ids = rows.map((r) => r.routeId).filter(Boolean);
+    await this.cache.set(cacheKey, ids, CacheTTL.INTERCITY_ROUTES);
+    return new Set(ids);
+  }
+
   async getRoutes(
     mode?: string,
     limit = 100,
   ): Promise<(typeof gtfsRoute.$inferSelect)[]> {
+    if (mode) {
+      return this.db
+        .select()
+        .from(gtfsRoute)
+        .where(eq(gtfsRoute.mode, mode))
+        .limit(limit);
+    }
     return this.db.select().from(gtfsRoute).limit(limit);
   }
 
@@ -267,6 +353,13 @@ export class GtfsStaticService {
     mode?: string,
     limit = 100,
   ): Promise<(typeof gtfsStop.$inferSelect)[]> {
+    if (mode) {
+      return this.db
+        .select()
+        .from(gtfsStop)
+        .where(eq(gtfsStop.mode, mode))
+        .limit(limit);
+    }
     return this.db.select().from(gtfsStop).limit(limit);
   }
 

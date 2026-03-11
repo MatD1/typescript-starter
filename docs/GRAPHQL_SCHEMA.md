@@ -300,12 +300,19 @@ findStops(query: String!, type: StopFinderType): [StopObject!]!
 
 | Argument | Type            | Required | Description                                                       |
 |----------|-----------------|----------|-------------------------------------------------------------------|
-| `query`  | `String`        | ✓        | Search text, or `lon:lat:EPSG:4326` when `type` is `coord`        |
+| `query`  | `String`        | ✓        | Format depends on `type` (see below)                              |
 | `type`   | `StopFinderType`| No       | `any` (default) · `stop` · `poi` · `coord`                        |
 
-**StopFinderType values:** `any` (all location types), `coord` (coordinate lookup), `poi` (places of interest), `stop` (stop ID or global stop ID).
+**Important:** `type` defines the expected `query` format. Use `any` for free-text name search.
 
-**Example:**
+| type   | query format              | Example                          |
+|--------|---------------------------|----------------------------------|
+| `any`  | Any text (name, partial)   | `"Wynyard"`, `"Circular Quay"`   |
+| `stop` | Stop ID only (numeric)     | `"200060"`                       |
+| `coord`| `lon:lat:EPSG:4326`       | `"151.206:-33.884:EPSG:4326"`    |
+| `poi`  | Restrictive; prefer `any`  | —                                |
+
+**Example (name search):**
 ```graphql
 query FindStops {
   findStops(query: "Wynyard") {

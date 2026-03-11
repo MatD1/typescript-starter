@@ -28,7 +28,10 @@ registerEnumType(TransportModeEnum, {
   description: 'NSW transport network mode',
   valuesMap: {
     sydneytrains: { description: 'Sydney Trains suburban network' },
-    intercity: { description: 'Intercity / regional rail services' },
+    intercity: {
+      description:
+        'Intercity / regional rail (filtered from Sydney Trains feed by route)',
+    },
     buses: { description: 'Sydney metropolitan buses' },
     nswtrains: { description: 'NSW TrainLink long-distance trains' },
     ferries: { description: 'Sydney Ferries' },
@@ -49,12 +52,22 @@ registerEnumType(StopFinderTypeEnum, {
   name: 'StopFinderType',
   description: 'Type of results for stop finder search (v1 API type_sf)',
   valuesMap: {
-    any: { description: 'All location types' },
-    coord: {
-      description: 'Coordinate lookup (use query as lon:lat:EPSG:4326)',
+    any: {
+      description:
+        'All location types — use for free-text name search (e.g. "Wynyard")',
     },
-    poi: { description: 'Places of interest' },
-    stop: { description: 'Stop ID or global stop ID' },
+    coord: {
+      description:
+        'Coordinate lookup — query must be lon:lat:EPSG:4326. Use "any" for name search.',
+    },
+    poi: {
+      description:
+        'Places of interest — restrictive. Use "any" for general name search.',
+    },
+    stop: {
+      description:
+        'Stop ID only (e.g. 200060) — not for name search. Use "any" for name search.',
+    },
   },
 });
 

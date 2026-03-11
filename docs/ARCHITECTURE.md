@@ -111,7 +111,10 @@ Store nsw_xxx in Flutter secure storage; use X-API-Key for server-to-server
 |-----------------------------|--------|---------------------|
 | `realtime:vehicles:{mode}`  | 15 s   | TTL expiry          |
 | `realtime:tripupdates:{mode}` | 30 s | TTL expiry          |
+| `realtime:vehicles:intercity` | 15 s | TTL expiry (filtered from sydneytrains) |
+| `realtime:tripupdates:intercity` | 30 s | TTL expiry (filtered from sydneytrains) |
 | `disruptions:{mode}`        | 300 s  | TTL expiry          |
+| `disruptions:intercity`     | 300 s  | TTL expiry (filtered from sydneytrains) |
 | `tripplanner:trip:{hash}`   | 300 s  | TTL expiry          |
 | `tripplanner:departures:{hash}` | 30 s | TTL expiry        |
 | `tripplanner:stops:{hash}`  | 3600 s | TTL expiry          |
@@ -136,9 +139,21 @@ All cache entries are stored in Redis as JSON strings via `CacheService`.
 | tripupdates   | buses          | `v1/gtfs/realtime/buses`                              |
 | tripupdates   | ferries        | `v1/gtfs/realtime/ferries`                            |
 | tripupdates   | nswtrains      | `v1/gtfs/realtime/nswtrains`                          |
-| tripupdates   | intercity      | `v1/gtfs/realtime/intercity`                          |
-| vehiclepos    | any            | `v2/gtfs/vehiclepos/{mode}`                           |
-| alerts        | any            | `v2/gtfs/alerts/{mode}`                               |
+| tripupdates   | intercity      | *(logical filter)* — derived from sydneytrains by route (BMT, CCN, HUN, SCO, SHL) |
+| vehiclepos    | sydneytrains   | `v2/gtfs/vehiclepos/sydneytrains`                      |
+| vehiclepos    | metro          | `v2/gtfs/vehiclepos/metro`                             |
+| vehiclepos    | lightrail      | `v2/gtfs/vehiclepos/lightrail/innerwest`               |
+| vehiclepos    | buses          | `v1/gtfs/vehiclepos/buses`                             |
+| vehiclepos    | ferries        | `v1/gtfs/vehiclepos/ferries/sydneyferries`             |
+| vehiclepos    | nswtrains      | `v1/gtfs/vehiclepos/nswtrains`                         |
+| vehiclepos    | intercity      | *(logical filter)* — derived from sydneytrains by route |
+| alerts        | sydneytrains   | `v2/gtfs/alerts/sydneytrains`                          |
+| alerts        | metro          | `v2/gtfs/alerts/metro`                                 |
+| alerts        | lightrail      | `v2/gtfs/alerts/lightrail`                             |
+| alerts        | buses          | `v1/gtfs/alerts/buses`                                 |
+| alerts        | ferries        | `v1/gtfs/alerts/ferries`                               |
+| alerts        | nswtrains      | `v1/gtfs/alerts/nswtrains`                             |
+| alerts        | intercity      | *(logical filter)* — derived from sydneytrains by route |
 | schedule      | sydneytrains   | `v1/gtfs/schedule/sydneytrains` (static ZIP)          |
 | trip planner  | —              | `v2/tp/trip`                                          |
 | stop finder   | —              | `v2/tp/stop_finder`                                   |

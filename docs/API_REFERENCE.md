@@ -179,6 +179,8 @@ Live vehicle positions from GTFS-RT feed.
 
 **`TransportMode` values**: `sydneytrains` · `intercity` · `buses` · `nswtrains` · `ferries` · `metro` · `lightrail`
 
+> **Note:** `intercity` data is derived from the Sydney Trains feed by filtering on intercity route IDs (BMT, CCN, HUN, SCO, SHL). NSW no longer exposes a separate intercity realtime endpoint.
+
 ```http
 GET /api/v1/realtime/vehicles?mode=sydneytrains
 Authorization: Bearer <session-token>
@@ -225,6 +227,8 @@ Live trip updates (delays, cancellations, added trips).
 | Param  | Type           | Required | Description |
 |--------|----------------|----------|-------------|
 | `mode` | `TransportMode`| No       | Filter mode |
+
+> **Note:** `mode=intercity` returns trip updates filtered from Sydney Trains by intercity route (BMT, CCN, HUN, SCO, SHL).
 
 ```http
 GET /api/v1/realtime/trip-updates?mode=metro
@@ -337,6 +341,8 @@ Current service alerts from all modes or a specific mode.
 | `mode`   | `TransportMode`| No       | Filter mode                                 |
 | `effect` | string         | No       | Filter by effect (`NO_SERVICE`, `DELAYS`, …)|
 
+> **Note:** `mode=intercity` returns alerts filtered from Sydney Trains by intercity route (BMT, CCN, HUN, SCO, SHL).
+
 ```http
 GET /api/v1/disruptions?mode=buses&effect=DELAYS
 X-API-Key: nsw_xxx
@@ -423,11 +429,26 @@ Search stops/stations by name (v1 API).
 
 | Param   | Type   | Required | Description                          |
 |---------|--------|----------|--------------------------------------|
-| `query` | string | ✓        | Text search term, or `lon:lat:EPSG:4326` when `type=coord` |
+| `query` | string | ✓        | Search term. Format depends on `type` (see below). |
 | `type`  | string | No       | `any` (default), `stop`, `poi`, `coord` |
+
+**Important:** `type` defines the expected `query` format. Use `any` for free-text name search.
+
+| type   | query format              | Example                          |
+|--------|---------------------------|----------------------------------|
+| `any`  | Any text (name, partial)   | `Circular Quay`, `Wynyard`       |
+| `stop` | Stop ID only (numeric)    | `200060`, `10101100`             |
+| `coord`| `lon:lat:EPSG:4326`       | `151.206:-33.884:EPSG:4326`      |
+| `poi`  | Restrictive; prefer `any`  | —                                |
 
 ```http
 GET /api/v1/trip-planner/stop-finder?query=Circular+Quay
+X-API-Key: nsw_xxx
+```
+
+Stop ID lookup:
+```http
+GET /api/v1/trip-planner/stop-finder?query=200060&type=stop
 X-API-Key: nsw_xxx
 ```
 

@@ -7,4 +7,6 @@ export const CacheTTL = {
   STOP_SEARCH: 3600,
   TRIP_PLANS: 300,
   GTFS_STATIC: 86400,
+  INTERCITY_ROUTES: 3600,
+  ROUTE_MAP: 3600,
 } as const;

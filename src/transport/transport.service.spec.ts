@@ -40,7 +40,7 @@ describe('TransportService.buildGtfsRtUrl', () => {
 
   // ── Trip updates: v1 modes ─────────────────────────────────────────────────
 
-  it.each(['buses', 'ferries', 'nswtrains', 'intercity'] as const)(
+  it.each(['buses', 'ferries', 'nswtrains'] as const)(
     'tripupdates/%s → v1/gtfs/realtime/{mode} path',
     (mode) => {
       const url = service.buildGtfsRtUrl('tripupdates', mode);
@@ -50,10 +50,19 @@ describe('TransportService.buildGtfsRtUrl', () => {
     },
   );
 
-  // ── Vehicle positions: always v2, no realtime/ segment ────────────────────
+  it('tripupdates/intercity → v2/gtfs/realtime/sydneytrains (intercity merged into sydneytrains)',
+    () => {
+      const url = service.buildGtfsRtUrl('tripupdates', 'intercity');
+      expect(url).toBe(
+        'https://api.transport.nsw.gov.au/v2/gtfs/realtime/sydneytrains',
+      );
+    },
+  );
 
-  it.each(['sydneytrains', 'buses', 'metro', 'ferries'] as const)(
-    'vehiclepos/%s → v2/gtfs/vehiclepos path (no version split)',
+  // ── Vehicle positions: v2 modes ───────────────────────────────────────────
+
+  it.each(['sydneytrains', 'metro'] as const)(
+    'vehiclepos/%s → v2/gtfs/vehiclepos/{mode} path',
     (mode) => {
       const url = service.buildGtfsRtUrl('vehiclepos', mode);
       expect(url).toBe(
@@ -62,14 +71,70 @@ describe('TransportService.buildGtfsRtUrl', () => {
     },
   );
 
-  // ── Alerts: always v2, no realtime/ segment ───────────────────────────────
+  it('vehiclepos/lightrail → v2/gtfs/vehiclepos/lightrail/innerwest path', () => {
+    const url = service.buildGtfsRtUrl('vehiclepos', 'lightrail');
+    expect(url).toBe(
+      'https://api.transport.nsw.gov.au/v2/gtfs/vehiclepos/lightrail/innerwest',
+    );
+  });
 
-  it.each(['sydneytrains', 'buses'] as const)(
-    'alerts/%s → v2/gtfs/alerts path',
+  // ── Vehicle positions: v1 modes ───────────────────────────────────────────
+
+  it.each(['buses', 'nswtrains'] as const)(
+    'vehiclepos/%s → v1/gtfs/vehiclepos/{mode} path',
+    (mode) => {
+      const url = service.buildGtfsRtUrl('vehiclepos', mode);
+      expect(url).toBe(
+        `https://api.transport.nsw.gov.au/v1/gtfs/vehiclepos/${mode}`,
+      );
+    },
+  );
+
+  it('vehiclepos/intercity → v2/gtfs/vehiclepos/sydneytrains (intercity merged into sydneytrains)',
+    () => {
+      const url = service.buildGtfsRtUrl('vehiclepos', 'intercity');
+      expect(url).toBe(
+        'https://api.transport.nsw.gov.au/v2/gtfs/vehiclepos/sydneytrains',
+      );
+    },
+  );
+
+  it('vehiclepos/ferries → v1/gtfs/vehiclepos/ferries/sydneyferries path', () => {
+    const url = service.buildGtfsRtUrl('vehiclepos', 'ferries');
+    expect(url).toBe(
+      'https://api.transport.nsw.gov.au/v1/gtfs/vehiclepos/ferries/sydneyferries',
+    );
+  });
+
+  // ── Alerts: v2 modes ──────────────────────────────────────────────────────
+
+  it.each(['sydneytrains', 'metro', 'lightrail'] as const)(
+    'alerts/%s → v2/gtfs/alerts/{mode} path',
     (mode) => {
       const url = service.buildGtfsRtUrl('alerts', mode);
       expect(url).toBe(
         `https://api.transport.nsw.gov.au/v2/gtfs/alerts/${mode}`,
+      );
+    },
+  );
+
+  // ── Alerts: v1 modes ──────────────────────────────────────────────────────
+
+  it.each(['buses', 'ferries', 'nswtrains'] as const)(
+    'alerts/%s → v1/gtfs/alerts/{mode} path',
+    (mode) => {
+      const url = service.buildGtfsRtUrl('alerts', mode);
+      expect(url).toBe(
+        `https://api.transport.nsw.gov.au/v1/gtfs/alerts/${mode}`,
+      );
+    },
+  );
+
+  it('alerts/intercity → v2/gtfs/alerts/sydneytrains (intercity merged into sydneytrains)',
+    () => {
+      const url = service.buildGtfsRtUrl('alerts', 'intercity');
+      expect(url).toBe(
+        'https://api.transport.nsw.gov.au/v2/gtfs/alerts/sydneytrains',
       );
     },
   );

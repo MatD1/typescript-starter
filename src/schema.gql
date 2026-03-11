@@ -395,16 +395,20 @@ type StationObject {
 
 """Type of results for stop finder search (v1 API type_sf)"""
 enum StopFinderType {
-  """All location types"""
+  """All location types — use for free-text name search (e.g. "Wynyard")"""
   any
 
-  """Coordinate lookup (use query as lon:lat:EPSG:4326)"""
+  """
+  Coordinate lookup — query must be lon:lat:EPSG:4326. Use "any" for name search.
+  """
   coord
 
-  """Places of interest"""
+  """Places of interest — restrictive. Use "any" for general name search."""
   poi
 
-  """Stop ID or global stop ID"""
+  """
+  Stop ID only (e.g. 200060) — not for name search. Use "any" for name search.
+  """
   stop
 }
 
@@ -451,12 +455,18 @@ type TrackedTripObject {
   """Overall trip delay in seconds (positive = late)"""
   delay: Int
 
+  """Line code from GTFS (e.g. T1, CCN)"""
+  lineCode: String
+
   """Transport mode this vehicle belongs to"""
   mode: String!
   performingPriorTrip: Boolean
 
   """Live GPS position and status. Null if vehicle is not yet active."""
   position: LivePositionObject
+
+  """Route colour hex from GTFS (e.g. 009B77)"""
+  routeColour: String
   routeId: String
 
   """Overall trip schedule relationship"""
@@ -485,7 +495,7 @@ enum TransportMode {
   """Sydney Ferries"""
   ferries
 
-  """Intercity / regional rail services"""
+  """Intercity / regional rail (filtered from Sydney Trains feed by route)"""
   intercity
 
   """Light rail (CBD, Inner West, Parramatta)"""
@@ -511,7 +521,13 @@ type TripUpdateObject {
   """Overall trip delay in seconds"""
   delay: Int
   directionId: Int
+
+  """Line code from GTFS (e.g. T1, CCN)"""
+  lineCode: String
   mode: String!
+
+  """Route colour hex from GTFS (e.g. 009B77)"""
+  routeColour: String
   routeId: String
   scheduleRelationship: String
   startDate: String
@@ -565,11 +581,17 @@ type VehiclePositionObject {
   currentStopSequence: Int
   directionId: Int
   latitude: Float!
+
+  """Line code from GTFS (e.g. T1, CCN)"""
+  lineCode: String
   longitude: Float!
   mode: String!
   occupancyStatus: String
   odometer: Float
   performingPriorTrip: Boolean
+
+  """Route colour hex from GTFS (e.g. 009B77)"""
+  routeColour: String
   routeId: String
   specialVehicleAttributes: Int
   speed: Float

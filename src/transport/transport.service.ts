@@ -30,6 +30,25 @@ const TRIP_UPDATES_V2_MODES = new Set<TransportMode>([
   'lightrail',
 ]);
 
+/**
+ * Modes supported by the v2 vehiclepos endpoint.
+ * Same as trip-updates. v1 has buses, ferries, nswtrains, intercity.
+ */
+const VEHICLE_POS_V2_MODES = new Set<TransportMode>([
+  'sydneytrains',
+  'metro',
+  'lightrail',
+]);
+
+/**
+ * Mode-to-path overrides for vehiclepos. v1/v2 use different path structures
+ * for some modes (e.g. lightrail/innerwest in v2, ferries/sydneyferries in v1).
+ */
+const MODE_TO_VEHICLEPOS_PATH: Partial<Record<TransportMode, string>> = {
+  lightrail: 'lightrail/innerwest',
+  ferries: 'ferries/sydneyferries',
+};
+
 @Injectable()
 export class TransportService {
   private readonly logger = new Logger(TransportService.name);
@@ -72,15 +91,28 @@ export class TransportService {
    *   v2/gtfs/realtime/{mode}  — sydneytrains, metro, lightrail
    *   v1/gtfs/realtime/{mode}  — buses, ferries, nswtrains, intercity
    *
-   * Vehicle positions and alerts use the v2 non-realtime path (no version split):
-   *   v2/gtfs/{feedType}/{mode}
+   * Vehicle positions and alerts use the same version split:
+   *   v2/gtfs/{feedType}/{path}  — sydneytrains, metro, lightrail
+   *   v1/gtfs/{feedType}/{path}  — buses, ferries, nswtrains, intercity
+   * Some modes need path overrides (e.g. lightrail/innerwest, ferries/sydneyferries).
+   *
+   * Intercity is now combined in sydneytrains feed; use sydneytrains endpoint.
    */
   buildGtfsRtUrl(feedType: GtfsRtFeedType, mode: TransportMode): string {
+    const effectiveMode = mode === 'intercity' ? 'sydneytrains' : mode;
     if (feedType === 'tripupdates') {
-      const version = TRIP_UPDATES_V2_MODES.has(mode) ? 'v2' : 'v1';
-      return `${this.baseUrl}/${version}/gtfs/realtime/${mode}`;
+      const version = TRIP_UPDATES_V2_MODES.has(effectiveMode) ? 'v2' : 'v1';
+      return `${this.baseUrl}/${version}/gtfs/realtime/${effectiveMode}`;
     }
-    return `${this.baseUrl}/v2/gtfs/${feedType}/${mode}`;
+    if (feedType === 'vehiclepos' || feedType === 'alerts') {
+      const version = VEHICLE_POS_V2_MODES.has(effectiveMode) ? 'v2' : 'v1';
+      const path =
+        feedType === 'vehiclepos'
+          ? (MODE_TO_VEHICLEPOS_PATH[effectiveMode] ?? effectiveMode)
+          : effectiveMode;
+      return `${this.baseUrl}/${version}/gtfs/${feedType}/${path}`;
+    }
+    return `${this.baseUrl}/v2/gtfs/${feedType}/${effectiveMode}`;
   }
 
   async getTripPlan(params: TripPlannerParams): Promise<unknown> {
@@ -119,6 +151,7 @@ export class TransportService {
         outputFormat: 'rapidJSON',
         coordOutputFormat: 'EPSG:4326',
         departureMonitorMacro: true,
+        mode: 'direct',
         ...params,
       },
     };
