@@ -235,8 +235,8 @@ query AllDisruptions {
 
 ### planTrip
 
-Journey planner — finds one or more itineraries between two points.  
-Cached 300 s per unique parameter set.
+Journey planner — finds one or more itineraries between two points (v1 API).  
+Uses `depArrMacro: dep` (trips departing after specified time). Cached 300 s per unique parameter set.
 
 ```graphql
 planTrip(
@@ -249,20 +249,22 @@ planTrip(
   itdDate: String
   itdTime: String
   calcNumberOfTrips: Int
+  wheelchair: Boolean
 ): [TripResultObject!]!
 ```
 
-| Argument            | Type     | Description                     |
-|---------------------|----------|---------------------------------|
-| `originId`          | `String` | GTFS stop ID of origin          |
-| `originName`        | `String` | Free-text name search           |
-| `originCoord`       | `String` | `"lon:lat:EPSG:4326"`           |
-| `destId`            | `String` | GTFS stop ID of destination     |
-| `destName`          | `String` | Free-text name search           |
-| `destCoord`         | `String` | `"lon:lat:EPSG:4326"`           |
-| `itdDate`           | `String` | `"YYYYMMDD"` (default: now)     |
-| `itdTime`           | `String` | `"HHmm"` (default: now)         |
-| `calcNumberOfTrips` | `Int`    | Alternatives to return (1–6)    |
+| Argument            | Type     | Description                                      |
+|---------------------|----------|--------------------------------------------------|
+| `originId`          | `String` | GTFS stop ID of origin                           |
+| `originName`        | `String` | Free-text name search                            |
+| `originCoord`       | `String` | `lon:lat:EPSG:4326` (longitude first)            |
+| `destId`            | `String` | GTFS stop ID of destination                      |
+| `destName`          | `String` | Free-text name search                            |
+| `destCoord`         | `String` | `lon:lat:EPSG:4326` (longitude first)            |
+| `itdDate`           | `String` | `YYYYMMDD` (default: now)                       |
+| `itdTime`           | `String` | `HHmm` (default: now)                           |
+| `calcNumberOfTrips`| `Int`    | Alternatives to return (1–6)                     |
+| `wheelchair`        | `Boolean`| If true, only wheelchair-accessible options      |
 
 **Example — trip from Parramatta to Central:**
 ```graphql
@@ -289,17 +291,19 @@ query PlanMyTrip {
 
 ### findStops
 
-Stop/station search by name against the live NSW trip planner.  
+Stop/station search by name against the live NSW trip planner (v1 API).  
 Cached 3600 s.
 
 ```graphql
-findStops(query: String!, type: String): [StopObject!]!
+findStops(query: String!, type: StopFinderType): [StopObject!]!
 ```
 
-| Argument | Type     | Required | Description                                    |
-|----------|----------|----------|------------------------------------------------|
-| `query`  | `String` | ✓        | Search text                                    |
-| `type`   | `String` | No       | `any` (default) · `stop` · `poi` · `address`  |
+| Argument | Type            | Required | Description                                                       |
+|----------|-----------------|----------|-------------------------------------------------------------------|
+| `query`  | `String`        | ✓        | Search text, or `lon:lat:EPSG:4326` when `type` is `coord`        |
+| `type`   | `StopFinderType`| No       | `any` (default) · `stop` · `poi` · `coord`                        |
+
+**StopFinderType values:** `any` (all location types), `coord` (coordinate lookup), `poi` (places of interest), `stop` (stop ID or global stop ID).
 
 **Example:**
 ```graphql
@@ -342,11 +346,11 @@ query DepartureBoard {
 
 ### nearbyStops
 
-Find stops within a radius using the NSW trip planner coord search.  
-Cached 3600 s.
+Find stops within a radius using the NSW trip planner coord search (v1 API, `type_1: BUS_POINT`).  
+`radius` in metres, default 500. Cached 3600 s.
 
 ```graphql
-nearbyStops(lat: Float!, lon: Float!, radius: Int): [StopObject!]!
+nearbyStops(lat: Float!, lon: Float!, radius: Float): [StopObject!]!
 ```
 
 **Example:**

@@ -42,6 +42,11 @@ export class TransportService {
   ) {
     this.baseUrl = this.configService.get<string>('transport.baseUrl')!;
     this.apiKey = this.configService.get<string>('transport.apiKey')!;
+    if (!this.apiKey) {
+      this.logger.warn(
+        'NSW_TRANSPORT_API_KEY is missing or empty. Transport API requests will return 401.',
+      );
+    }
   }
 
   private get authHeaders() {
@@ -79,20 +84,21 @@ export class TransportService {
   }
 
   async getTripPlan(params: TripPlannerParams): Promise<unknown> {
-    const url = `${this.baseUrl}/v2/tp/trip`;
+    const url = `${this.baseUrl}/v1/tp/trip`;
+    const v1Params = this.mapTripParamsToV1(params);
     const config: AxiosRequestConfig = {
       headers: { ...this.authHeaders, Accept: 'application/json' },
       params: {
         outputFormat: 'rapidJSON',
         coordOutputFormat: 'EPSG:4326',
-        ...params,
+        ...v1Params,
       },
     };
     return this.request<unknown>(url, config);
   }
 
   async getStopFinder(params: StopFinderParams): Promise<unknown> {
-    const url = `${this.baseUrl}/v2/tp/stop_finder`;
+    const url = `${this.baseUrl}/v1/tp/stop_finder`;
     const config: AxiosRequestConfig = {
       headers: { ...this.authHeaders, Accept: 'application/json' },
       params: {
@@ -106,7 +112,7 @@ export class TransportService {
   }
 
   async getDepartureMonitor(params: DepartureMonitorParams): Promise<unknown> {
-    const url = `${this.baseUrl}/v2/tp/departure_mon`;
+    const url = `${this.baseUrl}/v1/tp/departure_mon`;
     const config: AxiosRequestConfig = {
       headers: { ...this.authHeaders, Accept: 'application/json' },
       params: {
@@ -120,16 +126,41 @@ export class TransportService {
   }
 
   async getCoord(params: CoordParams): Promise<unknown> {
-    const url = `${this.baseUrl}/v2/tp/coord`;
+    const url = `${this.baseUrl}/v1/tp/coord`;
     const config: AxiosRequestConfig = {
       headers: { ...this.authHeaders, Accept: 'application/json' },
       params: {
         outputFormat: 'rapidJSON',
         coordOutputFormat: 'EPSG:4326',
+        inclFilter: 1,
         ...params,
       },
     };
     return this.request<unknown>(url, config);
+  }
+
+  /**
+   * Maps our TripPlannerParams to v1 API format (name_origin, type_origin, etc.).
+   */
+  private mapTripParamsToV1(params: TripPlannerParams): Record<string, unknown> {
+    const nameOrigin =
+      params.originId ?? params.originCoord ?? params.originName ?? '10101331';
+    const typeOrigin = params.originCoord ? 'coord' : 'any';
+    const nameDest =
+      params.destId ?? params.destCoord ?? params.destName ?? '10102027';
+    const typeDest = params.destCoord ? 'coord' : 'any';
+
+    return {
+      depArrMacro: 'dep',
+      name_origin: nameOrigin,
+      type_origin: typeOrigin,
+      name_destination: nameDest,
+      type_destination: typeDest,
+      itdDate: params.itdDate,
+      itdTime: params.itdTime,
+      calcNumberOfTrips: params.calcNumberOfTrips,
+      wheelchair: params.wheelchair ? 'on' : undefined,
+    };
   }
 
   private async request<T>(

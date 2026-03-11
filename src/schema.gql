@@ -316,7 +316,12 @@ type Query {
   disruptions(effect: String, mode: TransportMode): [DisruptionObject!]!
 
   """Search for stops and stations by name."""
-  findStops(query: String!, type: String): [StopObject!]!
+  findStops(
+    query: String!
+
+    """any | coord | poi | stop"""
+    type: StopFinderType
+  ): [StopObject!]!
 
   """List GTFS static routes."""
   gtfsRoutes(limit: Float, mode: TransportMode): [GtfsRouteObject!]!
@@ -334,7 +339,22 @@ type Query {
   nearbyStops(lat: Float!, lon: Float!, radius: Float): [StopObject!]!
 
   """Plan a journey between two locations."""
-  planTrip(calcNumberOfTrips: Float, destCoord: String, destId: String, destName: String, itdDate: String, itdTime: String, originCoord: String, originId: String, originName: String): [TripResultObject!]!
+  planTrip(
+    calcNumberOfTrips: Int
+
+    """lon:lat:EPSG:4326 (longitude first)"""
+    destCoord: String
+    destId: String
+    destName: String
+    itdDate: String
+    itdTime: String
+
+    """lon:lat:EPSG:4326 (longitude first)"""
+    originCoord: String
+    originId: String
+    originName: String
+    wheelchair: Boolean
+  ): [TripResultObject!]!
 
   """Search for stations/stops by name."""
   searchStations(limit: Float, query: String!): [StationObject!]!
@@ -371,6 +391,21 @@ type StationObject {
   stopId: String!
   stopName: String!
   wheelchairBoarding: Int
+}
+
+"""Type of results for stop finder search (v1 API type_sf)"""
+enum StopFinderType {
+  """All location types"""
+  any
+
+  """Coordinate lookup (use query as lon:lat:EPSG:4326)"""
+  coord
+
+  """Places of interest"""
+  poi
+
+  """Stop ID or global stop ID"""
+  stop
 }
 
 type StopObject {

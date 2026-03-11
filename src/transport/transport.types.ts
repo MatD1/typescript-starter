@@ -37,6 +37,27 @@ registerEnumType(TransportModeEnum, {
   },
 });
 
+/** GraphQL enum for stop finder type (v1 API type_sf). */
+export enum StopFinderTypeEnum {
+  any = 'any',
+  coord = 'coord',
+  poi = 'poi',
+  stop = 'stop',
+}
+
+registerEnumType(StopFinderTypeEnum, {
+  name: 'StopFinderType',
+  description: 'Type of results for stop finder search (v1 API type_sf)',
+  valuesMap: {
+    any: { description: 'All location types' },
+    coord: {
+      description: 'Coordinate lookup (use query as lon:lat:EPSG:4326)',
+    },
+    poi: { description: 'Places of interest' },
+    stop: { description: 'Stop ID or global stop ID' },
+  },
+});
+
 export const GTFS_RT_FEED_TYPES = [
   'vehiclepos',
   'tripupdates',

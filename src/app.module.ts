@@ -1,11 +1,11 @@
-import { Module } from '@nestjs/common';
+import { Logger, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { GraphQLModule } from '@nestjs/graphql';
 import { ApolloDriver } from '@nestjs/apollo';
 import type { ApolloDriverConfig } from '@nestjs/apollo';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import {
   fieldExtensionsEstimator,
@@ -14,7 +14,10 @@ import {
 } from 'graphql-query-complexity';
 import { GraphQLError } from 'graphql';
 import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
+import type { Request, Response } from 'express';
 import { join } from 'path';
+
+const graphqlLogger = new Logger('GraphQL');
 
 import configuration from './config/configuration';
 import { DatabaseModule } from './database/database.module';
@@ -29,6 +32,7 @@ import { GtfsStaticModule } from './gtfs-static/gtfs-static.module';
 import { AdminModule } from './admin/admin.module';
 
 import { ApiKeyGuard } from './auth/guards/api-key.guard';
+import { GqlThrottlerGuard } from './common/guards/gql-throttler.guard';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { RequestLogInterceptor } from './common/interceptors/request-log.interceptor';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
@@ -60,10 +64,10 @@ const MAX_QUERY_DEPTH = 8;
       driver: ApolloDriver,
       autoSchemaFile: join(process.cwd(), 'src/schema.gql'),
       sortSchema: true,
-      playground: process.env.NODE_ENV !== 'production',
+      playground: false,
       introspection: process.env.NODE_ENV !== 'production',
       persistedQueries: {},
-      context: ({ req }: { req: Request }) => ({ req }),
+      context: ({ req, res }: { req: Request; res: Response }) => ({ req, res }),
       plugins: [
         ApolloServerPluginLandingPageLocalDefault(),
         {
@@ -85,6 +89,15 @@ const MAX_QUERY_DEPTH = 8;
                   throw new GraphQLError(
                     `Query complexity ${complexity} exceeds maximum of ${MAX_QUERY_COMPLEXITY}.`,
                     { extensions: { code: 'QUERY_TOO_COMPLEX' } },
+                  );
+                }
+              },
+              async didEncounterErrors({ errors, operationName }) {
+                for (const err of errors) {
+                  graphqlLogger.error(
+                    `Operation: ${operationName ?? '<anonymous>'}`,
+                    err.message,
+                    err.stack,
                   );
                 }
               },
@@ -126,7 +139,7 @@ const MAX_QUERY_DEPTH = 8;
   ],
   providers: [
     { provide: APP_GUARD, useClass: ApiKeyGuard },
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: GqlThrottlerGuard },
     { provide: APP_INTERCEPTOR, useClass: RequestLogInterceptor },
     { provide: APP_INTERCEPTOR, useClass: CacheControlInterceptor },
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },

@@ -366,26 +366,27 @@ X-API-Key: nsw_xxx
 
 ## Trip Planner
 
-### GET /api/v1/trip-planner/trips
+### GET /api/v1/trip-planner/trip
 
-Plan a journey between two locations.
+Plan a journey between two locations (v1 API).
 
-| Param               | Type   | Required | Description                    |
-|---------------------|--------|----------|--------------------------------|
-| `originId`          | string | No*      | Stop/place ID of origin        |
-| `originName`        | string | No*      | Name search for origin         |
-| `originCoord`       | string | No*      | `lon:lat:EPSG:4326`            |
-| `destId`            | string | No*      | Stop/place ID of destination   |
-| `destName`          | string | No*      | Name search for destination    |
-| `destCoord`         | string | No*      | `lon:lat:EPSG:4326`            |
-| `itdDate`           | string | No       | Date `YYYYMMDD`                |
-| `itdTime`           | string | No       | Time `HHmm`                    |
-| `calcNumberOfTrips` | number | No       | Number of alternatives (1–6)   |
+| Param               | Type    | Required | Description                         |
+|---------------------|---------|----------|-------------------------------------|
+| `originId`          | string  | No*      | Stop/place ID of origin             |
+| `originName`        | string  | No*      | Name search for origin              |
+| `originCoord`       | string  | No*      | `lon:lat:EPSG:4326` (longitude first) |
+| `destId`            | string  | No*      | Stop/place ID of destination       |
+| `destName`          | string  | No*      | Name search for destination         |
+| `destCoord`         | string  | No*      | `lon:lat:EPSG:4326` (longitude first) |
+| `itdDate`           | string  | No       | Date `YYYYMMDD`                     |
+| `itdTime`           | string  | No       | Time `HHmm`                         |
+| `calcNumberOfTrips` | number  | No       | Number of alternatives (1–6)       |
+| `wheelchair`        | boolean | No       | If true, only wheelchair-accessible options |
 
 \* At least one of `originId`, `originName`, or `originCoord` is required for origin, and similarly for destination.
 
 ```http
-GET /api/v1/trip-planner/trips?originId=10101100&destName=Central+Station
+GET /api/v1/trip-planner/trip?originId=10101100&destName=Central+Station
 X-API-Key: nsw_xxx
 ```
 
@@ -416,17 +417,17 @@ X-API-Key: nsw_xxx
 
 ---
 
-### GET /api/v1/trip-planner/stops
+### GET /api/v1/trip-planner/stop-finder
 
-Search stops/stations by name.
+Search stops/stations by name (v1 API).
 
-| Param   | Type   | Required | Description      |
-|---------|--------|----------|------------------|
-| `query` | string | ✓        | Text search term |
-| `type`  | string | No       | `any`, `stop`, `poi`, `address` |
+| Param   | Type   | Required | Description                          |
+|---------|--------|----------|--------------------------------------|
+| `query` | string | ✓        | Text search term, or `lon:lat:EPSG:4326` when `type=coord` |
+| `type`  | string | No       | `any` (default), `stop`, `poi`, `coord` |
 
 ```http
-GET /api/v1/trip-planner/stops?query=Circular+Quay
+GET /api/v1/trip-planner/stop-finder?query=Circular+Quay
 X-API-Key: nsw_xxx
 ```
 
@@ -500,7 +501,7 @@ GET /api/v1/trip-planner/nearby?lat=-33.865&lon=151.209&radius=300
 X-API-Key: nsw_xxx
 ```
 
-**Response** `200` — array of `Stop` (same shape as `/stops`)
+**Response** `200` — array of `Stop` (same shape as `/stop-finder`)
 
 **Cache-Control**: `public, max-age=3600`
 

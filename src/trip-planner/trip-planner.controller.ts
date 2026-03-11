@@ -16,13 +16,27 @@ export class TripPlannerController {
     required: false,
     description: 'Stop/location ID',
   })
-  @ApiQuery({ name: 'originCoord', required: false, description: 'lat,lon' })
+  @ApiQuery({
+    name: 'originCoord',
+    required: false,
+    description: 'lon:lat:EPSG:4326 (longitude first)',
+  })
   @ApiQuery({ name: 'destName', required: false })
   @ApiQuery({ name: 'destId', required: false })
-  @ApiQuery({ name: 'destCoord', required: false, description: 'lat,lon' })
+  @ApiQuery({
+    name: 'destCoord',
+    required: false,
+    description: 'lon:lat:EPSG:4326 (longitude first)',
+  })
   @ApiQuery({ name: 'itdDate', required: false, description: 'YYYYMMDD' })
   @ApiQuery({ name: 'itdTime', required: false, description: 'HHmm' })
   @ApiQuery({ name: 'calcNumberOfTrips', required: false, type: Number })
+  @ApiQuery({
+    name: 'wheelchair',
+    required: false,
+    type: Boolean,
+    description: 'If true, only wheelchair-accessible options',
+  })
   planTrip(
     @Query('originName') originName?: string,
     @Query('originId') originId?: string,
@@ -33,6 +47,7 @@ export class TripPlannerController {
     @Query('itdDate') itdDate?: string,
     @Query('itdTime') itdTime?: string,
     @Query('calcNumberOfTrips') calcNumberOfTrips?: string,
+    @Query('wheelchair') wheelchair?: string,
   ) {
     return this.tripPlannerService.planTrip({
       originName,
@@ -46,6 +61,7 @@ export class TripPlannerController {
       calcNumberOfTrips: calcNumberOfTrips
         ? Number(calcNumberOfTrips)
         : undefined,
+      wheelchair: wheelchair === 'true',
     });
   }
 
@@ -55,10 +71,13 @@ export class TripPlannerController {
   @ApiQuery({
     name: 'type',
     required: false,
-    description: 'stop, platform, poi, address, any',
+    description: 'any | stop | poi | coord',
   })
   findStops(@Query('query') query: string, @Query('type') type?: string) {
-    return this.tripPlannerService.findStops({ name_sf: query, type_sf: type });
+    return this.tripPlannerService.findStops({
+      name_sf: query,
+      type_sf: type ?? 'any',
+    });
   }
 
   @Get('departures')
@@ -100,7 +119,7 @@ export class TripPlannerController {
     return this.tripPlannerService.searchByCoord({
       coord: `${lon}:${lat}:EPSG:4326`,
       radius_1: radius ? Number(radius) : 500,
-      type_1: 'STOP',
+      type_1: 'BUS_POINT',
     });
   }
 }

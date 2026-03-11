@@ -16,14 +16,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
   catch(exception: unknown, host: ArgumentsHost) {
     if (host.getType<GqlContextType>() === 'graphql') {
-      const gqlHost = GqlArgumentsHost.create(host);
-      void gqlHost;
       const message =
         exception instanceof HttpException
           ? exception.message
           : exception instanceof Error
             ? exception.message
             : 'Internal server error';
+      const stack = exception instanceof Error ? exception.stack : undefined;
+      this.logger.error(
+        `GraphQL error: ${message}`,
+        stack ?? String(exception),
+      );
       throw new GraphQLError(message);
     }
 

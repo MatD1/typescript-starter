@@ -1,10 +1,11 @@
-import { Args, Query, Resolver } from '@nestjs/graphql';
+import { Args, Int, Query, Resolver } from '@nestjs/graphql';
 import { TripPlannerService } from './trip-planner.service';
 import {
   TripResultObject,
   StopObject,
   DepartureObject,
 } from './dto/trip-planner.objects';
+import { StopFinderTypeEnum } from '../transport/transport.types';
 
 @Resolver()
 export class TripPlannerResolver {
@@ -16,14 +17,23 @@ export class TripPlannerResolver {
   planTrip(
     @Args('originId', { nullable: true }) originId?: string,
     @Args('originName', { nullable: true }) originName?: string,
-    @Args('originCoord', { nullable: true }) originCoord?: string,
+    @Args('originCoord', {
+      nullable: true,
+      description: 'lon:lat:EPSG:4326 (longitude first)',
+    })
+    originCoord?: string,
     @Args('destId', { nullable: true }) destId?: string,
     @Args('destName', { nullable: true }) destName?: string,
-    @Args('destCoord', { nullable: true }) destCoord?: string,
+    @Args('destCoord', {
+      nullable: true,
+      description: 'lon:lat:EPSG:4326 (longitude first)',
+    })
+    destCoord?: string,
     @Args('itdDate', { nullable: true }) itdDate?: string,
     @Args('itdTime', { nullable: true }) itdTime?: string,
-    @Args('calcNumberOfTrips', { nullable: true, type: () => Number })
+    @Args('calcNumberOfTrips', { nullable: true, type: () => Int })
     calcNumberOfTrips?: number,
+    @Args('wheelchair', { nullable: true }) wheelchair?: boolean,
   ) {
     return this.tripPlannerService.planTrip({
       originId,
@@ -35,6 +45,7 @@ export class TripPlannerResolver {
       itdDate,
       itdTime,
       calcNumberOfTrips,
+      wheelchair,
     });
   }
 
@@ -43,9 +54,17 @@ export class TripPlannerResolver {
   })
   findStops(
     @Args('query') query: string,
-    @Args('type', { nullable: true }) type?: string,
+    @Args('type', {
+      nullable: true,
+      type: () => StopFinderTypeEnum,
+      description: 'any | coord | poi | stop',
+    })
+    type?: StopFinderTypeEnum,
   ) {
-    return this.tripPlannerService.findStops({ name_sf: query, type_sf: type });
+    return this.tripPlannerService.findStops({
+      name_sf: query,
+      type_sf: type ?? 'any',
+    });
   }
 
   @Query(() => [DepartureObject], {
@@ -76,7 +95,7 @@ export class TripPlannerResolver {
     return this.tripPlannerService.searchByCoord({
       coord: `${lon}:${lat}:EPSG:4326`,
       radius_1: radius ?? 500,
-      type_1: 'STOP',
+      type_1: 'BUS_POINT',
     });
   }
 }

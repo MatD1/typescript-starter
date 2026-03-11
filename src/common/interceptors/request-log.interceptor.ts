@@ -46,19 +46,24 @@ export class RequestLogInterceptor implements NestInterceptor {
       isGraphql = true;
       const gqlCtx = GqlExecutionContext.create(context);
       const info = gqlCtx.getInfo<GraphQLResolveInfo>();
-      const req = gqlCtx.getContext<{ req: Request }>().req;
+      const ctx = gqlCtx.getContext<{ req?: Request }>();
+      const req = ctx?.req;
       method = 'GRAPHQL';
       path = `${String(info.parentType)}.${info.fieldName}`;
       label = `[GraphQL] ${path}`;
-      userId = (req as unknown as Record<string, unknown>)['user']
-        ? ((req as unknown as Record<string, unknown>)['user'] as { userId?: string })
-            .userId
+      userId = req
+        ? (req as unknown as Record<string, unknown>)['user']
+          ? ((req as unknown as Record<string, unknown>)['user'] as { userId?: string })
+              .userId
+          : undefined
         : undefined;
-      keyId = (req as unknown as Record<string, unknown>)['user']
-        ? ((req as unknown as Record<string, unknown>)['user'] as { keyId?: string }).keyId
+      keyId = req
+        ? (req as unknown as Record<string, unknown>)['user']
+          ? ((req as unknown as Record<string, unknown>)['user'] as { keyId?: string }).keyId
+          : undefined
         : undefined;
-      ipAddress = req.ip ?? req.socket?.remoteAddress;
-      userAgent = req.headers['user-agent'];
+      ipAddress = req ? (req.ip ?? req.socket?.remoteAddress) : undefined;
+      userAgent = req?.headers?.['user-agent'];
     } else {
       const req = context.switchToHttp().getRequest<Request>();
       method = req.method;
