@@ -51,7 +51,12 @@ async function bootstrap() {
   // falls back to '*' (allow all) for local development.
   const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',').map((o) =>
     o.trim(),
-  );
+  ).filter(Boolean);
+  if (process.env.NODE_ENV === 'production' && !allowedOrigins.length) {
+    throw new Error(
+      'ALLOWED_ORIGINS must be set in production. Set comma-separated origins (e.g. https://myapp.example.com).',
+    );
+  }
   app.enableCors({
     origin: allowedOrigins?.length ? allowedOrigins : '*',
     credentials: true,
@@ -82,10 +87,14 @@ async function bootstrap() {
     .addTag('stations', 'Station and stop search')
     .addTag('gtfs-static', 'GTFS static timetable data')
     .addTag('auth', 'Authentication and API key management')
+    .addTag('Admin', 'Admin dashboard: users, API keys, logs, stats, GTFS management, health')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/docs', app, document);
+  SwaggerModule.setup('api/docs', app, document, {
+    jsonDocumentUrl: '/api/docs-json',
+    yamlDocumentUrl: '/api/docs-yaml',
+  });
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);

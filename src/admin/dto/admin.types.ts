@@ -193,8 +193,8 @@ export class AdminOverviewStats {
   @Field(() => Float)
   errorRate24h!: number;
 
-  @Field()
-  topMode!: string;
+  @Field({ description: 'Most-requested API path in last 24h' })
+  topPath!: string;
 }
 
 @ObjectType()

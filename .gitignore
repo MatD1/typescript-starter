@@ -408,3 +408,6 @@ docs/tripplanner_v1_swag_efa11_20251002.yml
 docs/getvehicleposition_8.0.yaml
 .gitignore
 docs/getvehicleposition_v2_03.yaml
+docs/ADMIN_GRAPHQL_QUERIES.md
+.gitignore
+docs/SECURITY.md

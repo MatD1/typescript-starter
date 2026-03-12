@@ -61,7 +61,9 @@ type AdminLogPage {
 type AdminOverviewStats {
   activeUsers7d: Int!
   errorRate24h: Float!
-  topMode: String!
+
+  """Most-requested API path in last 24h"""
+  topPath: String!
   totalRequests24h: Int!
 }
 

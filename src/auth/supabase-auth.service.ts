@@ -12,6 +12,8 @@ import {
   type JWTPayload,
 } from 'jose';
 import { eq } from 'drizzle-orm';
+
+const REFRESH_USED_PREFIX = 'refresh:used:';
 import { AuthService } from './auth.service';
 import { DRIZZLE } from '../database/database.module';
 import type { DrizzleDB } from '../database/database.module';
@@ -55,12 +57,25 @@ export class SupabaseAuthService {
     return this.jwks;
   }
 
+  private getVerifyOptions(): { issuer: string; audience: string } {
+    const supabaseUrl = this.configService.get<string>('supabase.url');
+    if (!supabaseUrl) {
+      throw new UnauthorizedException('Supabase URL not configured');
+    }
+    const baseUrl = supabaseUrl.replace(/\/$/, '');
+    return {
+      issuer: `${baseUrl}/auth/v1`,
+      audience: 'authenticated',
+    };
+  }
+
   private async verifyToken(token: string): Promise<SupabaseJwtPayload> {
     const header = decodeProtectedHeader(token);
     const alg = header.alg;
+    const verifyOptions = this.getVerifyOptions();
 
     if (alg && ASYMMETRIC_ALGORITHMS.has(alg)) {
-      const { payload } = await jwtVerify(token, this.getJwks());
+      const { payload } = await jwtVerify(token, this.getJwks(), verifyOptions);
       return payload as SupabaseJwtPayload;
     }
 
@@ -74,6 +89,7 @@ export class SupabaseAuthService {
     const secret = new TextEncoder().encode(jwtSecret);
     const { payload } = await jwtVerify(token, secret, {
       algorithms: ['HS256'],
+      ...verifyOptions,
     });
     return payload as SupabaseJwtPayload;
   }
@@ -179,6 +195,17 @@ export class SupabaseAuthService {
       .limit(1);
 
     if (!rows.length) {
+      const reusedUserId = await this.cache.get<string>(
+        `${REFRESH_USED_PREFIX}${refreshToken}`,
+      );
+      if (reusedUserId) {
+        await this.db
+          .delete(sessionTable)
+          .where(eq(sessionTable.userId, reusedUserId));
+        throw new UnauthorizedException(
+          'Refresh token reuse detected. All sessions have been revoked.',
+        );
+      }
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
@@ -215,6 +242,12 @@ export class SupabaseAuthService {
       createdAt: now,
       updatedAt: now,
     });
+
+    await this.cache.set(
+      `${REFRESH_USED_PREFIX}${refreshToken}`,
+      oldSession.userId,
+      Math.floor(refreshTtlSeconds),
+    );
 
     await this.db.delete(sessionTable).where(eq(sessionTable.id, oldSession.id));
 

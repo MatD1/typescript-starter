@@ -200,7 +200,7 @@ export class AdminResolver {
     @Args('id', { type: () => ID }) id: string,
     @Args('input') input: UpdateApiKeyInput,
   ): Promise<AdminApiKey> {
-    return this.adminService.updateApiKey(id, id ? input : input);
+    return this.adminService.updateApiKey(id, input);
   }
 
   @Mutation(() => Boolean, { name: 'adminDeleteApiKey' })

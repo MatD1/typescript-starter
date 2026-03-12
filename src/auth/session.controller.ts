@@ -7,6 +7,7 @@ import {
   Post,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SupabaseAuthService } from './supabase-auth.service';
 import { Public } from '../common/decorators/public.decorator';
@@ -25,6 +26,7 @@ export class SessionController {
   constructor(private readonly supabaseAuthService: SupabaseAuthService) {}
 
   @Post('refresh')
+  @Throttle({ default: { limit: 10, ttl: 900_000 } }) // 10 req per 15 min
   @ApiOperation({
     summary: 'Refresh session tokens',
     description:
@@ -55,9 +57,7 @@ export class SessionController {
       if (err instanceof HttpException) {
         throw err;
       }
-      throw new UnauthorizedException(
-        err instanceof Error ? err.message : 'Invalid or expired refresh token',
-      );
+      throw new UnauthorizedException('Invalid or expired refresh token');
     }
   }
 }

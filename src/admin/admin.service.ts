@@ -433,13 +433,13 @@ export class AdminService {
     const totalVal = total24h[0]?.value ?? 0;
     const errorsVal = errors24h[0]?.value ?? 0;
     const errorRate = totalVal > 0 ? (errorsVal / totalVal) * 100 : 0;
-    const topMode = topPaths[0]?.path ?? 'N/A';
+    const topPath = topPaths[0]?.path ?? 'N/A';
 
     return {
       totalRequests24h: totalVal,
       activeUsers7d: Number(activeUsers7d[0]?.value ?? 0),
       errorRate24h: Math.round(errorRate * 100) / 100,
-      topMode,
+      topPath,
     };
   }
 

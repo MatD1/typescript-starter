@@ -6,13 +6,16 @@ import {
   Post,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SupabaseAuthService } from './supabase-auth.service';
 import { Public } from '../common/decorators/public.decorator';
-import { IsString } from 'class-validator';
+import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
 class SupabaseExchangeDto {
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(2000, { message: 'Token exceeds maximum length' })
   token!: string;
 }
 
@@ -23,6 +26,7 @@ export class SupabaseAuthController {
   constructor(private readonly supabaseAuthService: SupabaseAuthService) {}
 
   @Post('exchange')
+  @Throttle({ default: { limit: 10, ttl: 900_000 } }) // 10 req per 15 min
   @ApiOperation({
     summary: 'Exchange a Supabase JWT for session tokens',
     description:
@@ -36,9 +40,7 @@ export class SupabaseAuthController {
       if (err instanceof HttpException) {
         throw err;
       }
-      throw new UnauthorizedException(
-        err instanceof Error ? err.message : 'Invalid Supabase token',
-      );
+      throw new UnauthorizedException('Invalid Supabase token');
     }
   }
 }
