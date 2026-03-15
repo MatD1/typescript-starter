@@ -1,0 +1,8 @@
+{
+  "track_id": "enrich_trip_metadata_20260315",
+  "type": "feature",
+  "status": "new",
+  "created_at": "2026-03-15T12:00:00Z",
+  "updated_at": "2026-03-15T12:00:00Z",
+  "description": "Update the departures return result to include the lineCode and lineColour like the live vehicles response. Make sure this applies to graphql as well. Once complete run tests until all issues are fixed"
+}
