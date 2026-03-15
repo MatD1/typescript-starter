@@ -1,4 +1,5 @@
 import { Field, Float, Int, ObjectType } from '@nestjs/graphql';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 @ObjectType()
 export class LocationObject {
@@ -52,6 +53,20 @@ export class LegObject {
 
   @Field(() => Int, { nullable: true })
   duration?: number;
+
+  @Field({
+    nullable: true,
+    description: 'Line code from GTFS (e.g. T1, CCN)',
+  })
+  @ApiPropertyOptional({ description: 'Line code from GTFS (e.g. T1, CCN)' })
+  lineCode?: string;
+
+  @Field({
+    nullable: true,
+    description: 'Route colour hex from GTFS (e.g. 009B77)',
+  })
+  @ApiPropertyOptional({ description: 'Route colour hex from GTFS (e.g. 009B77)' })
+  routeColour?: string;
 }
 
 @ObjectType()
@@ -115,4 +130,18 @@ export class DepartureObject {
 
   @Field({ nullable: true })
   platform?: string;
+
+  @Field({
+    nullable: true,
+    description: 'Line code from GTFS (e.g. T1, CCN)',
+  })
+  @ApiPropertyOptional({ description: 'Line code from GTFS (e.g. T1, CCN)' })
+  lineCode?: string;
+
+  @Field({
+    nullable: true,
+    description: 'Route colour hex from GTFS (e.g. 009B77)',
+  })
+  @ApiPropertyOptional({ description: 'Route colour hex from GTFS (e.g. 009B77)' })
+  routeColour?: string;
 }
