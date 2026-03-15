@@ -2,7 +2,7 @@
 
 This plan follows the TDD workflow and ensures consistent enrichment of trip planning results with GTFS route metadata (`lineCode` and `routeColour`).
 
-## Phase 1: DTO and Schema Updates
+## Phase 1: DTO and Schema Updates [checkpoint: 51ebfac]
 
 - [x] Task: Update `DepartureObject` and `LegObject` DTOs (1869080)
     - [x] Write tests to verify the presence of `lineCode` and `routeColour` in the DTOs
@@ -13,9 +13,9 @@ This plan follows the TDD workflow and ensures consistent enrichment of trip pla
     - [x] Commit changes
     - [x] Attach task summary with Git notes
     - [x] Record task commit SHA in `plan.md`
-    - [ ] Commit plan update
+    - [x] Commit plan update
 
-- [ ] Task: Conductor - User Manual Verification 'Phase 1: DTO and Schema Updates' (Protocol in workflow.md)
+- [x] Task: Conductor - User Manual Verification 'Phase 1: DTO and Schema Updates' (Protocol in workflow.md)
 
 ## Phase 2: Enrichment Logic Implementation
 
