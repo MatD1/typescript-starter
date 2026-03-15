@@ -4,15 +4,15 @@ This plan follows the TDD workflow and ensures consistent enrichment of trip pla
 
 ## Phase 1: DTO and Schema Updates
 
-- [ ] Task: Update `DepartureObject` and `LegObject` DTOs
-    - [ ] Write tests to verify the presence of `lineCode` and `routeColour` in the DTOs
-    - [ ] Add `lineCode` and `routeColour` fields to `DepartureObject` in `src/trip-planner/dto/trip-planner.objects.ts`
-    - [ ] Add `lineCode` and `routeColour` fields to `LegObject` in `src/trip-planner/dto/trip-planner.objects.ts`
-    - [ ] Update Swagger decorators for both objects with appropriate descriptions
-    - [ ] Verify coverage (>80%)
-    - [ ] Commit changes
-    - [ ] Attach task summary with Git notes
-    - [ ] Record task commit SHA in `plan.md`
+- [x] Task: Update `DepartureObject` and `LegObject` DTOs (1869080)
+    - [x] Write tests to verify the presence of `lineCode` and `routeColour` in the DTOs
+    - [x] Add `lineCode` and `routeColour` fields to `DepartureObject` in `src/trip-planner/dto/trip-planner.objects.ts`
+    - [x] Add `lineCode` and `routeColour` fields to `LegObject` in `src/trip-planner/dto/trip-planner.objects.ts`
+    - [x] Update Swagger decorators for both objects with appropriate descriptions
+    - [x] Verify coverage (>80%)
+    - [x] Commit changes
+    - [x] Attach task summary with Git notes
+    - [x] Record task commit SHA in `plan.md`
     - [ ] Commit plan update
 
 - [ ] Task: Conductor - User Manual Verification 'Phase 1: DTO and Schema Updates' (Protocol in workflow.md)
