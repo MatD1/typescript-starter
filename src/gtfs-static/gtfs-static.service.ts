@@ -4,7 +4,7 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import * as unzipper from 'unzipper';
 import { parse } from 'csv-parse';
-import { inArray, eq, isNotNull, or } from 'drizzle-orm';
+import { inArray, eq, isNotNull, or, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../database/database.module';
 import type { DrizzleDB } from '../database/database.module';
 import {
@@ -142,7 +142,18 @@ export class GtfsStaticService {
         .values(batch)
         .onConflictDoUpdate({
           target: gtfsStop.stopId,
-          set: { mode, updatedAt: new Date() },
+          set: {
+            stopCode: sql`excluded.stop_code`,
+            stopName: sql`excluded.stop_name`,
+            stopLat: sql`excluded.stop_lat`,
+            stopLon: sql`excluded.stop_lon`,
+            locationType: sql`excluded.location_type`,
+            parentStation: sql`excluded.parent_station`,
+            wheelchairBoarding: sql`excluded.wheelchair_boarding`,
+            platformCode: sql`excluded.platform_code`,
+            mode: sql`excluded.mode`,
+            updatedAt: sql`excluded.updated_at`,
+          },
         });
     }
     this.logger.debug(`Ingested ${records.length} stops for ${mode}`);
@@ -172,7 +183,16 @@ export class GtfsStaticService {
         .values(batch)
         .onConflictDoUpdate({
           target: gtfsRoute.routeId,
-          set: { mode, updatedAt: new Date() },
+          set: {
+            agencyId: sql`excluded.agency_id`,
+            routeShortName: sql`excluded.route_short_name`,
+            routeLongName: sql`excluded.route_long_name`,
+            routeType: sql`excluded.route_type`,
+            routeColor: sql`excluded.route_color`,
+            routeTextColor: sql`excluded.route_text_color`,
+            mode: sql`excluded.mode`,
+            updatedAt: sql`excluded.updated_at`,
+          },
         });
     }
     this.logger.debug(`Ingested ${records.length} routes for ${mode}`);
@@ -205,7 +225,17 @@ export class GtfsStaticService {
         .values(batch)
         .onConflictDoUpdate({
           target: gtfsTrip.tripId,
-          set: { mode, updatedAt: new Date() },
+          set: {
+            routeId: sql`excluded.route_id`,
+            serviceId: sql`excluded.service_id`,
+            tripHeadsign: sql`excluded.trip_headsign`,
+            tripShortName: sql`excluded.trip_short_name`,
+            directionId: sql`excluded.direction_id`,
+            shapeId: sql`excluded.shape_id`,
+            wheelchairAccessible: sql`excluded.wheelchair_accessible`,
+            mode: sql`excluded.mode`,
+            updatedAt: sql`excluded.updated_at`,
+          },
         });
     }
     this.logger.debug(`Ingested ${records.length} trips for ${mode}`);
@@ -239,9 +269,17 @@ export class GtfsStaticService {
         .onConflictDoUpdate({
           target: gtfsCalendar.serviceId,
           set: {
-            startDate: batch[0].startDate,
-            endDate: batch[0].endDate,
-            updatedAt: new Date(),
+            monday: sql`excluded.monday`,
+            tuesday: sql`excluded.tuesday`,
+            wednesday: sql`excluded.wednesday`,
+            thursday: sql`excluded.thursday`,
+            friday: sql`excluded.friday`,
+            saturday: sql`excluded.saturday`,
+            sunday: sql`excluded.sunday`,
+            startDate: sql`excluded.start_date`,
+            endDate: sql`excluded.end_date`,
+            mode: sql`excluded.mode`,
+            updatedAt: sql`excluded.updated_at`,
           },
         });
     }

@@ -53,6 +53,7 @@
     "graphql": "^16.13.1",
     "graphql-query-complexity": "^1.1.0",
     "gtfs-realtime-bindings": "^1.1.1",
+    "helmet": "^8.1.0",
     "ioredis": "^5.10.0",
     "jose": "^6.2.1",
     "pg": "^8.20.0",

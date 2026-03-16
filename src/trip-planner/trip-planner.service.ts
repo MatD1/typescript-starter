@@ -4,6 +4,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { TransportService } from '../transport/transport.service';
+import { GtfsStaticService } from '../gtfs-static/gtfs-static.service';
 import { CacheService } from '../cache/cache.service';
 import { CacheTTL } from '../cache/cache.constants';
 import {
@@ -28,6 +29,7 @@ export class TripPlannerService {
 
   constructor(
     private readonly transportService: TransportService,
+    private readonly gtfsStaticService: GtfsStaticService,
     private readonly cache: CacheService,
   ) {}
 
@@ -39,7 +41,8 @@ export class TripPlannerService {
         const raw = (await this.transportService.getTripPlan(
           params,
         )) as NswApiRecord;
-        return this.mapTrips(raw);
+        const metadata = await this.gtfsStaticService.getRouteMetadataMap();
+        return this.mapTrips(raw, metadata);
       },
       CacheTTL.TRIP_PLANS,
     );
@@ -70,7 +73,8 @@ export class TripPlannerService {
         const raw = (await this.transportService.getDepartureMonitor(
           params,
         )) as NswApiRecord;
-        return this.mapDepartures(raw);
+        const metadata = await this.gtfsStaticService.getRouteMetadataMap();
+        return this.mapDepartures(raw, metadata);
       },
       CacheTTL.DEPARTURES,
     );
@@ -129,28 +133,42 @@ export class TripPlannerService {
     }
   }
 
-  private mapTrips(raw: NswApiRecord): TripResultObject[] {
+  private mapTrips(
+    raw: NswApiRecord,
+    metadata: Map<string, { lineCode: string; routeColour?: string }>,
+  ): TripResultObject[] {
     const journeys = (raw?.journeys as NswApiRecord[] | undefined) ?? [];
     return journeys.map((j) => {
       const legs = (j?.legs as NswApiRecord[] | undefined) ?? [];
       return {
-        legs: legs.map((l) => this.mapLeg(l)),
+        legs: legs.map((l) => this.mapLeg(l, metadata)),
         duration: j?.duration as number | undefined,
         interchanges: j?.interchanges as number | undefined,
       } satisfies TripResultObject;
     });
   }
 
-  private mapLeg(l: NswApiRecord): LegObject {
+  private mapLeg(
+    l: NswApiRecord,
+    metadata: Map<string, { lineCode: string; routeColour?: string }>,
+  ): LegObject {
     const transport = l?.transportation as NswApiRecord | undefined;
     const origin = l?.origin as NswApiRecord | undefined;
     const dest = l?.destination as NswApiRecord | undefined;
+    const properties = transport?.properties as NswApiRecord | undefined;
+    const tripId =
+      (properties?.RealtimeTripId as string | undefined) ??
+      (transport?.id as string | undefined);
+    const meta = tripId ? metadata.get(tripId) : undefined;
+
     return {
-      tripId: transport?.id as string | undefined,
+      tripId,
       transportation: (transport?.product as NswApiRecord | undefined)?.name as
         | string
         | undefined,
       lineName: transport?.number as string | undefined,
+      lineCode: meta?.lineCode,
+      routeColour: meta?.routeColour,
       destination: (transport?.destination as NswApiRecord | undefined)
         ?.name as string | undefined,
       origin: this.mapLocation(origin),
@@ -196,15 +214,26 @@ export class TripPlannerService {
     });
   }
 
-  private mapDepartures(raw: NswApiRecord): DepartureObject[] {
+  private mapDepartures(
+    raw: NswApiRecord,
+    metadata: Map<string, { lineCode: string; routeColour?: string }>,
+  ): DepartureObject[] {
     const events = (raw?.stopEvents as NswApiRecord[] | undefined) ?? [];
     return events.map((e) => {
       const transport = e?.transportation as NswApiRecord | undefined;
       const location = e?.location as NswApiRecord | undefined;
+      const properties = transport?.properties as NswApiRecord | undefined;
+      const tripId =
+        (properties?.RealtimeTripId as string | undefined) ??
+        (transport?.id as string | undefined);
+      const meta = tripId ? metadata.get(tripId) : undefined;
+
       return {
         stopName: location?.name as string | undefined,
         stopId: location?.id as string | undefined,
         lineName: transport?.number as string | undefined,
+        lineCode: meta?.lineCode,
+        routeColour: meta?.routeColour,
         destination: (transport?.destination as NswApiRecord | undefined)
           ?.name as string | undefined,
         departureTimePlanned: e?.departureTimePlanned as string | undefined,

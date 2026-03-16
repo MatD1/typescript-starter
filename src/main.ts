@@ -4,6 +4,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import type { Request, Response, NextFunction } from 'express';
 import { json, urlencoded } from 'express';
 import compression from 'compression';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { runMigrations } from './database/migration.runner';
 
@@ -19,6 +20,13 @@ async function bootstrap() {
   // Disable NestJS's built-in body parser so better-auth can read the raw
   // request body on /auth/* routes via its own toNodeHandler.
   const app = await NestFactory.create(AppModule, { bodyParser: false });
+
+  app.use(
+    helmet({
+      crossOriginEmbedderPolicy: process.env.NODE_ENV === 'production',
+      contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
+    }),
+  );
 
   // Compress all responses — saves 60-80% on large GTFS-RT payloads.
   app.use(compression());

@@ -125,8 +125,14 @@ type DepartureObject {
   departureTimeEstimated: String
   departureTimePlanned: String
   destination: String
+
+  """Line code from GTFS (e.g. T1, CCN)"""
+  lineCode: String
   lineName: String
   platform: String
+
+  """Route colour hex from GTFS (e.g. 009B77)"""
+  routeColour: String
   stopId: String
   stopName: String
   transportMode: String
@@ -225,8 +231,14 @@ type LegObject {
   dest: LocationObject
   destination: String
   duration: Int
+
+  """Line code from GTFS (e.g. T1, CCN)"""
+  lineCode: String
   lineName: String
   origin: LocationObject
+
+  """Route colour hex from GTFS (e.g. 009B77)"""
+  routeColour: String
   transportation: String
   tripId: String
 }

@@ -12,7 +12,7 @@ import {
   getComplexity,
   simpleEstimator,
 } from 'graphql-query-complexity';
-import { GraphQLError } from 'graphql';
+import { GraphQLError, GraphQLFormattedError } from 'graphql';
 import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
 import type { Request, Response } from 'express';
 import { join } from 'path';
@@ -66,6 +66,17 @@ const MAX_QUERY_DEPTH = 8;
       sortSchema: true,
       playground: false,
       introspection: process.env.NODE_ENV !== 'production',
+      formatError: (formattedError: GraphQLFormattedError, error: unknown) => {
+        if (process.env.NODE_ENV === 'production') {
+          return {
+            message: formattedError.message,
+            extensions: {
+              code: formattedError.extensions?.code || 'INTERNAL_SERVER_ERROR',
+            },
+          };
+        }
+        return formattedError;
+      },
       persistedQueries: {},
       context: ({ req, res }: { req: Request; res: Response }) => ({ req, res }),
       plugins: [

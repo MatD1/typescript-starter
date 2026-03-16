@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { TripPlannerService } from './trip-planner.service';
 import { TransportService } from '../transport/transport.service';
+import { GtfsStaticService } from '../gtfs-static/gtfs-static.service';
 import { CacheService } from '../cache/cache.service';
 
 describe('TripPlannerService.findStops validation', () => {
@@ -9,6 +10,10 @@ describe('TripPlannerService.findStops validation', () => {
 
   const mockTransportService = {
     getStopFinder: jest.fn(),
+  };
+
+  const mockGtfsStaticService = {
+    getRouteMetadataMap: jest.fn().mockResolvedValue(new Map()),
   };
 
   const mockCacheService = {
@@ -21,6 +26,7 @@ describe('TripPlannerService.findStops validation', () => {
       providers: [
         TripPlannerService,
         { provide: TransportService, useValue: mockTransportService },
+        { provide: GtfsStaticService, useValue: mockGtfsStaticService },
         { provide: CacheService, useValue: mockCacheService },
       ],
     }).compile();
