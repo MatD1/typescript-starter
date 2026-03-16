@@ -1,10 +1,11 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { PaginatedResult } from './dto/gtfs-static.objects';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import * as unzipper from 'unzipper';
 import { parse } from 'csv-parse';
-import { inArray, eq, isNotNull, or, sql } from 'drizzle-orm';
+import { inArray, eq, isNotNull, or, sql, count } from 'drizzle-orm';
 import { DRIZZLE } from '../database/database.module';
 import type { DrizzleDB } from '../database/database.module';
 import {
@@ -13,6 +14,7 @@ import {
   gtfsTrip,
   gtfsCalendar,
   gtfsCalendarDate,
+  gtfsStopTime,
 } from '../database/schema/gtfs.schema';
 import { CacheService } from '../cache/cache.service';
 import { CacheTTL } from '../cache/cache.constants';
@@ -50,7 +52,7 @@ export class GtfsStaticService {
     private readonly httpService: HttpService,
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly cache: CacheService,
-  ) {}
+  ) { }
 
   async ingestAll(): Promise<
     { mode: string; success: boolean; error?: string }[]
@@ -96,6 +98,7 @@ export class GtfsStaticService {
     await this.ingestTrips(fileMap, mode);
     await this.ingestCalendar(fileMap, mode);
     await this.ingestCalendarDates(fileMap, mode);
+    await this.ingestStopTimes(fileMap, mode);
   }
 
   private async parseCsvFromZipEntry(
@@ -307,6 +310,33 @@ export class GtfsStaticService {
     }
   }
 
+  private async ingestStopTimes(
+    fileMap: Map<string, unzipper.File>,
+    mode: string,
+  ): Promise<void> {
+    const entry = fileMap.get('stop_times.txt');
+    if (!entry) return;
+    const records = await this.parseCsvFromZipEntry(entry);
+    for (let i = 0; i < records.length; i += BATCH_SIZE) {
+      const batch = records.slice(i, i + BATCH_SIZE).map((r) => ({
+        id: `${r['trip_id']}_${r['stop_sequence']}`,
+        tripId: r['trip_id'] ?? '',
+        arrivalTime: r['arrival_time'] ?? null,
+        departureTime: r['departure_time'] ?? null,
+        stopId: r['stop_id'] ?? '',
+        stopSequence: r['stop_sequence'] ? parseInt(r['stop_sequence']) : 0,
+        pickupType: r['pickup_type'] ? parseInt(r['pickup_type']) : null,
+        dropOffType: r['drop_off_type'] ? parseInt(r['drop_off_type']) : null,
+        mode,
+      }));
+      await this.db
+        .insert(gtfsStopTime)
+        .values(batch)
+        .onConflictDoNothing();
+    }
+    this.logger.debug(`Ingested ${records.length} stop_times for ${mode}`);
+  }
+
   /**
    * Returns route_id → metadata (lineCode, routeColour) for all routes with
    * route_short_name or route_color. Used to enrich vehicle positions and
@@ -376,35 +406,121 @@ export class GtfsStaticService {
   async getRoutes(
     mode?: string,
     limit = 100,
-  ): Promise<(typeof gtfsRoute.$inferSelect)[]> {
-    if (mode) {
-      return this.db
-        .select()
-        .from(gtfsRoute)
-        .where(eq(gtfsRoute.mode, mode))
-        .limit(limit);
-    }
-    return this.db.select().from(gtfsRoute).limit(limit);
+    offset = 0,
+  ): Promise<PaginatedResult<typeof gtfsRoute.$inferSelect>> {
+    const baseQuery = this.db.select().from(gtfsRoute);
+    const countQuery = this.db.select({ total: count() }).from(gtfsRoute);
+
+    const [data, countResult] = await Promise.all([
+      mode
+        ? baseQuery.where(eq(gtfsRoute.mode, mode)).limit(limit).offset(offset)
+        : baseQuery.limit(limit).offset(offset),
+      mode
+        ? countQuery.where(eq(gtfsRoute.mode, mode))
+        : countQuery,
+    ]);
+
+    const total = countResult[0]?.total ?? 0;
+    return { data, total, limit, offset, hasNextPage: offset + limit < total };
   }
 
   async getStops(
     mode?: string,
     limit = 100,
-  ): Promise<(typeof gtfsStop.$inferSelect)[]> {
-    if (mode) {
-      return this.db
-        .select()
-        .from(gtfsStop)
-        .where(eq(gtfsStop.mode, mode))
-        .limit(limit);
-    }
-    return this.db.select().from(gtfsStop).limit(limit);
+    offset = 0,
+  ): Promise<PaginatedResult<typeof gtfsStop.$inferSelect>> {
+    const baseQuery = this.db.select().from(gtfsStop);
+    const countQuery = this.db.select({ total: count() }).from(gtfsStop);
+
+    const [data, countResult] = await Promise.all([
+      mode
+        ? baseQuery.where(eq(gtfsStop.mode, mode)).limit(limit).offset(offset)
+        : baseQuery.limit(limit).offset(offset),
+      mode
+        ? countQuery.where(eq(gtfsStop.mode, mode))
+        : countQuery,
+    ]);
+
+    const total = countResult[0]?.total ?? 0;
+    return { data, total, limit, offset, hasNextPage: offset + limit < total };
   }
 
   async getTrips(
     routeId?: string,
     limit = 100,
-  ): Promise<(typeof gtfsTrip.$inferSelect)[]> {
-    return this.db.select().from(gtfsTrip).limit(limit);
+    offset = 0,
+  ): Promise<PaginatedResult<typeof gtfsTrip.$inferSelect>> {
+    const baseQuery = this.db.select().from(gtfsTrip);
+    const countQuery = this.db.select({ total: count() }).from(gtfsTrip);
+
+    const [data, countResult] = await Promise.all([
+      routeId
+        ? baseQuery.where(eq(gtfsTrip.routeId, routeId)).limit(limit).offset(offset)
+        : baseQuery.limit(limit).offset(offset),
+      routeId
+        ? countQuery.where(eq(gtfsTrip.routeId, routeId))
+        : countQuery,
+    ]);
+
+    const total = countResult[0]?.total ?? 0;
+    return { data, total, limit, offset, hasNextPage: offset + limit < total };
+  }
+
+  async getStopTimes(
+    tripId?: string,
+    stopId?: string,
+    limit = 100,
+    offset = 0,
+  ): Promise<PaginatedResult<typeof gtfsStopTime.$inferSelect>> {
+    const baseQuery = this.db.select().from(gtfsStopTime);
+    const countQuery = this.db.select({ total: count() }).from(gtfsStopTime);
+
+    const filterClause = tripId
+      ? eq(gtfsStopTime.tripId, tripId)
+      : stopId
+        ? eq(gtfsStopTime.stopId, stopId)
+        : undefined;
+
+    const [data, countResult] = await Promise.all([
+      filterClause
+        ? baseQuery.where(filterClause).limit(limit).offset(offset)
+        : baseQuery.limit(limit).offset(offset),
+      filterClause
+        ? countQuery.where(filterClause)
+        : countQuery,
+    ]);
+
+    const total = countResult[0]?.total ?? 0;
+    return { data, total, limit, offset, hasNextPage: offset + limit < total };
+  }
+
+  async getStopsCount(mode?: string): Promise<number> {
+    const query = this.db.select({ total: count() }).from(gtfsStop);
+    if (mode) {
+      const result = await query.where(eq(gtfsStop.mode, mode));
+      return result[0]?.total ?? 0;
+    }
+    const result = await query;
+    return result[0]?.total ?? 0;
+  }
+
+  async getRoutesCount(mode?: string): Promise<number> {
+    const query = this.db.select({ total: count() }).from(gtfsRoute);
+    if (mode) {
+      const result = await query.where(eq(gtfsRoute.mode, mode));
+      return result[0]?.total ?? 0;
+    }
+    const result = await query;
+    return result[0]?.total ?? 0;
+  }
+
+  async getTripsCount(routeId?: string): Promise<number> {
+    const query = this.db.select({ total: count() }).from(gtfsTrip);
+    if (routeId) {
+      const result = await query.where(eq(gtfsTrip.routeId, routeId));
+      return result[0]?.total ?? 0;
+    }
+    const result = await query;
+    return result[0]?.total ?? 0;
   }
 }

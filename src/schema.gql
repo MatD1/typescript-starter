@@ -192,6 +192,18 @@ type GtfsStopObject {
   stopName: String!
 }
 
+type GtfsStopTimeObject {
+  arrivalTime: String
+  departureTime: String
+  dropOffType: Int
+  id: String!
+  mode: String
+  pickupType: Int
+  stopId: String!
+  stopSequence: Int!
+  tripId: String!
+}
+
 type GtfsTableCount {
   count: Int!
   table: String!
@@ -300,6 +312,38 @@ type PaginatedApiKeys {
   total: Int!
 }
 
+type PaginatedRoutesObject {
+  data: [GtfsRouteObject!]!
+  hasNextPage: Boolean!
+  limit: Int!
+  offset: Int!
+  total: Int!
+}
+
+type PaginatedStopTimesObject {
+  data: [GtfsStopTimeObject!]!
+  hasNextPage: Boolean!
+  limit: Int!
+  offset: Int!
+  total: Int!
+}
+
+type PaginatedStopsObject {
+  data: [GtfsStopObject!]!
+  hasNextPage: Boolean!
+  limit: Int!
+  offset: Int!
+  total: Int!
+}
+
+type PaginatedTripsObject {
+  data: [GtfsTripObject!]!
+  hasNextPage: Boolean!
+  limit: Int!
+  offset: Int!
+  total: Int!
+}
+
 type PaginatedUsers {
   data: [AdminUser!]!
   limit: Int!
@@ -337,14 +381,26 @@ type Query {
     type: StopFinderType
   ): [StopObject!]!
 
-  """List GTFS static routes."""
-  gtfsRoutes(limit: Float, mode: TransportMode): [GtfsRouteObject!]!
+  """List GTFS static routes (paginated)."""
+  gtfsRoutes(limit: Int, mode: TransportMode, offset: Int): PaginatedRoutesObject!
 
-  """List GTFS static stops."""
-  gtfsStops(limit: Float, mode: TransportMode): [GtfsStopObject!]!
+  """Total count of GTFS static routes."""
+  gtfsRoutesCount(mode: TransportMode): Int!
 
-  """List GTFS static trips."""
-  gtfsTrips(limit: Float, routeId: String): [GtfsTripObject!]!
+  """List GTFS static stop times (paginated)."""
+  gtfsStopTimes(limit: Int, offset: Int, stopId: String, tripId: String): PaginatedStopTimesObject!
+
+  """List GTFS static stops (paginated)."""
+  gtfsStops(limit: Int, mode: TransportMode, offset: Int): PaginatedStopsObject!
+
+  """Total count of GTFS static stops."""
+  gtfsStopsCount(mode: TransportMode): Int!
+
+  """List GTFS static trips (paginated)."""
+  gtfsTrips(limit: Int, offset: Int, routeId: String): PaginatedTripsObject!
+
+  """Total count of GTFS static trips."""
+  gtfsTripsCount(routeId: String): Int!
 
   """Find stations near a coordinate."""
   nearbyStations(lat: Float!, limit: Float, lon: Float!, radius: Float): [StationObject!]!
