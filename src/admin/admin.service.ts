@@ -16,7 +16,7 @@ import { timeout, catchError } from 'rxjs/operators';
 import { of } from 'rxjs';
 import { DRIZZLE } from '../database/database.module';
 import type { DrizzleDB } from '../database/database.module';
-import { user, apikey } from '../database/schema/auth.schema';
+import { user, apiKey } from '../database/schema/auth.schema';
 import { requestLog } from '../database/schema/request-log.schema';
 import {
   gtfsStop,
@@ -133,8 +133,8 @@ export class AdminService {
     const [keyCountRows, reqCountRows] = await Promise.all([
       this.db
         .select({ value: count() })
-        .from(apikey)
-        .where(eq(apikey.userId, id)),
+        .from(apiKey)
+        .where(eq(apiKey.userId, id)),
       this.db
         .select({ value: count() })
         .from(requestLog)
@@ -194,21 +194,21 @@ export class AdminService {
     const offset = (page - 1) * limit;
 
     const conditions: ReturnType<typeof eq>[] = [];
-    if (query.userId) conditions.push(eq(apikey.userId, query.userId));
+    if (query.userId) conditions.push(eq(apiKey.userId, query.userId));
     if (query.enabled !== undefined)
-      conditions.push(eq(apikey.enabled, query.enabled));
+      conditions.push(eq(apiKey.enabled, query.enabled));
 
     const where = conditions.length ? and(...conditions) : undefined;
 
     const [rows, totalRows] = await Promise.all([
       this.db
         .select()
-        .from(apikey)
+        .from(apiKey)
         .where(where)
-        .orderBy(desc(apikey.createdAt))
+        .orderBy(desc(apiKey.createdAt))
         .limit(limit)
         .offset(offset),
-      this.db.select({ value: count() }).from(apikey).where(where),
+      this.db.select({ value: count() }).from(apiKey).where(where),
     ]);
 
     return {
@@ -222,8 +222,8 @@ export class AdminService {
   async getApiKey(id: string): Promise<AdminApiKeyDetail> {
     const rows = await this.db
       .select()
-      .from(apikey)
-      .where(eq(apikey.id, id))
+      .from(apiKey)
+      .where(eq(apiKey.id, id))
       .limit(1);
     if (!rows.length) throw new NotFoundException(`API key ${id} not found`);
 
@@ -257,12 +257,12 @@ export class AdminService {
   async updateApiKey(id: string, dto: UpdateApiKeyDto): Promise<AdminApiKey> {
     const rows = await this.db
       .select()
-      .from(apikey)
-      .where(eq(apikey.id, id))
+      .from(apiKey)
+      .where(eq(apiKey.id, id))
       .limit(1);
     if (!rows.length) throw new NotFoundException(`API key ${id} not found`);
 
-    const updates: Partial<typeof apikey.$inferInsert> = {
+    const updates: Partial<typeof apiKey.$inferInsert> = {
       updatedAt: new Date(),
     };
     if (dto.enabled !== undefined) updates.enabled = dto.enabled;
@@ -270,9 +270,9 @@ export class AdminService {
     if (dto.permissions !== undefined) updates.permissions = dto.permissions;
 
     const updated = await this.db
-      .update(apikey)
+      .update(apiKey)
       .set(updates)
-      .where(eq(apikey.id, id))
+      .where(eq(apiKey.id, id))
       .returning();
 
     return this.mapApiKey(updated[0]);
@@ -281,25 +281,25 @@ export class AdminService {
   async deleteApiKey(id: string): Promise<void> {
     const rows = await this.db
       .select()
-      .from(apikey)
-      .where(eq(apikey.id, id))
+      .from(apiKey)
+      .where(eq(apiKey.id, id))
       .limit(1);
     if (!rows.length) throw new NotFoundException(`API key ${id} not found`);
-    await this.db.delete(apikey).where(eq(apikey.id, id));
+    await this.db.delete(apiKey).where(eq(apiKey.id, id));
   }
 
   async resetApiKeyUsage(id: string): Promise<AdminApiKey> {
     const rows = await this.db
       .select()
-      .from(apikey)
-      .where(eq(apikey.id, id))
+      .from(apiKey)
+      .where(eq(apiKey.id, id))
       .limit(1);
     if (!rows.length) throw new NotFoundException(`API key ${id} not found`);
 
     const updated = await this.db
-      .update(apikey)
+      .update(apiKey)
       .set({ requestCount: 0, remaining: null, updatedAt: new Date() })
-      .where(eq(apikey.id, id))
+      .where(eq(apiKey.id, id))
       .returning();
 
     return this.mapApiKey(updated[0]);
@@ -531,13 +531,13 @@ export class AdminService {
     const rows = await this.db
       .select({
         keyId: requestLog.keyId,
-        keyName: apikey.name,
+        keyName: apiKey.name,
         cnt: count(),
       })
       .from(requestLog)
-      .leftJoin(apikey, eq(requestLog.keyId, apikey.id))
+      .leftJoin(apiKey, eq(requestLog.keyId, apiKey.id))
       .where(conditions.length ? and(...conditions) : undefined)
-      .groupBy(requestLog.keyId, apikey.name)
+      .groupBy(requestLog.keyId, apiKey.name)
       .orderBy(desc(count()))
       .limit(limit);
 
@@ -696,7 +696,7 @@ export class AdminService {
     };
   }
 
-  private mapApiKey(row: typeof apikey.$inferSelect): AdminApiKey {
+  private mapApiKey(row: typeof apiKey.$inferSelect): AdminApiKey {
     return {
       id: row.id,
       name: row.name ?? undefined,

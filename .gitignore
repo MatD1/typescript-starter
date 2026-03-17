@@ -412,3 +412,5 @@ docs/ADMIN_GRAPHQL_QUERIES.md
 .gitignore
 docs/SECURITY.md
 conductor/api-security-plan.md
+conductor/tracks/enrich_trip_metadata_20260315/better-auth-api-key-plan.md
+conductor/tracks/enrich_trip_metadata_20260315/station-routes-plan.md

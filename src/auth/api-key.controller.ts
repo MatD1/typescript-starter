@@ -11,7 +11,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
-import { IsDate, IsOptional, IsString } from 'class-validator';
+import { IsDate, IsOptional, IsString, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiKeyService } from './api-key.service';
 import { Public } from '../common/decorators/public.decorator';
@@ -25,6 +25,11 @@ class CreateApiKeyDto {
   @IsOptional()
   @Type(() => Date)
   expiresAt?: Date;
+
+  @IsString()
+  @IsOptional()
+  @IsIn(['user', 'admin', 'app-authorised'])
+  permissionLevel?: string;
 }
 
 @Public()
@@ -42,30 +47,43 @@ export class ApiKeyController {
   @ApiBody({ type: CreateApiKeyDto })
   async create(@Req() req: Request, @Body() dto: CreateApiKeyDto) {
     const sessionToken = this.extractSessionToken(req);
-    const userId = await this.apiKeyService.getUserFromSession(sessionToken);
-    if (!userId)
+    const sessionInfo = await this.apiKeyService.getUserFromSession(sessionToken);
+    if (!sessionInfo)
       throw new UnauthorizedException('Invalid or expired session token');
-    return this.apiKeyService.createApiKey(userId, dto.name, dto.expiresAt);
+
+    // Security: Only admins can assign 'admin' or 'app-authorised' permissions.
+    // If a standard user attempts to set them, force back to 'user'.
+    let targetPermission = dto.permissionLevel || 'user';
+    if (sessionInfo.role !== 'admin' && targetPermission !== 'user') {
+      targetPermission = 'user';
+    }
+
+    return this.apiKeyService.createApiKey(
+      sessionInfo.userId,
+      dto.name,
+      targetPermission,
+      dto.expiresAt,
+    );
   }
 
   @Get()
   @ApiOperation({ summary: 'List API keys for the authenticated user' })
   async list(@Req() req: Request) {
     const sessionToken = this.extractSessionToken(req);
-    const userId = await this.apiKeyService.getUserFromSession(sessionToken);
-    if (!userId)
+    const sessionInfo = await this.apiKeyService.getUserFromSession(sessionToken);
+    if (!sessionInfo)
       throw new UnauthorizedException('Invalid or expired session token');
-    return this.apiKeyService.listApiKeys(userId);
+    return this.apiKeyService.listApiKeys(sessionInfo.userId);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Revoke an API key' })
   async revoke(@Req() req: Request, @Param('id') id: string) {
     const sessionToken = this.extractSessionToken(req);
-    const userId = await this.apiKeyService.getUserFromSession(sessionToken);
-    if (!userId)
+    const sessionInfo = await this.apiKeyService.getUserFromSession(sessionToken);
+    if (!sessionInfo)
       throw new UnauthorizedException('Invalid or expired session token');
-    await this.apiKeyService.revokeApiKey(id, userId);
+    await this.apiKeyService.revokeApiKey(id, sessionInfo.userId);
     return { success: true };
   }
 

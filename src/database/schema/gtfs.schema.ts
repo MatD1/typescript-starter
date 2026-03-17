@@ -3,6 +3,7 @@ import {
   index,
   integer,
   pgTable,
+  primaryKey,
   text,
   timestamp,
 } from 'drizzle-orm/pg-core';
@@ -93,5 +94,19 @@ export const gtfsStopTime = pgTable(
   (t) => [
     index('gtfs_stop_times_trip_idx').on(t.tripId),
     index('gtfs_stop_times_stop_idx').on(t.stopId),
+  ],
+);
+
+export const gtfsStopRoute = pgTable(
+  'gtfs_stop_routes',
+  {
+    stopId: text('stop_id').notNull(),
+    routeId: text('route_id').notNull(),
+    mode: text('mode'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.stopId, t.routeId] }),
+    index('gtfs_stop_routes_stop_idx').on(t.stopId),
+    index('gtfs_stop_routes_route_idx').on(t.routeId),
   ],
 );

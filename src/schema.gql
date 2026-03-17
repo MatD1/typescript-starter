@@ -457,6 +457,7 @@ type StationObject {
   mode: String
   parentStation: String
   platformCode: String
+  routes: [GtfsRouteObject!]
   stopCode: String
   stopId: String!
   stopName: String!

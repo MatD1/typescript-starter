@@ -3,15 +3,14 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
-import { randomBytes } from 'crypto';
 import { DRIZZLE } from '../database/database.module';
 import type { DrizzleDB } from '../database/database.module';
-import { apikey, session } from '../database/schema/auth.schema';
+import { apiKey, session, user } from '../database/schema/auth.schema';
 import { CacheService } from '../cache/cache.service';
-
-const KEY_PREFIX = 'nsw_';
+import { AuthService } from './auth.service';
 
 /** Redis TTL for cached API key verification results (seconds). */
 const APIKEY_VERIFY_TTL = 60;
@@ -26,12 +25,14 @@ export interface ApiKeyRecord {
   enabled: boolean;
   createdAt: Date;
   expiresAt: Date | null;
+  permissions?: string;
 }
 
 interface VerifyResult {
   valid: boolean;
   userId?: string;
   keyId?: string;
+  permissions?: string[];
 }
 
 @Injectable()
@@ -39,100 +40,98 @@ export class ApiKeyService {
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly cache: CacheService,
+    @Inject(forwardRef(() => AuthService))
+    private readonly authService: AuthService,
   ) {}
 
   async createApiKey(
     userId: string,
     name?: string,
+    permissions?: string,
     expiresAt?: Date,
   ): Promise<{ key: string; id: string; start: string }> {
-    const rawKey = randomBytes(32).toString('hex');
-    const fullKey = `${KEY_PREFIX}${rawKey}`;
-    const start = fullKey.slice(0, 10);
-    const id = randomBytes(16).toString('hex');
-
-    await this.db.insert(apikey).values({
-      id,
-      name: name ?? null,
-      start,
-      prefix: KEY_PREFIX,
-      key: fullKey,
-      userId,
-      enabled: true,
-      requestCount: 0,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      expiresAt: expiresAt ?? null,
+    // We use better-auth's internal API to create the key.
+    // This ensures consistency with their plugin logic (hashing, prefixing, etc.)
+    const result = await this.authService.auth.api.createApiKey({
+      body: {
+        userId,
+        name: name ?? 'Default Key',
+        permissions: permissions ? { api: [permissions] } : { api: ['user'] },
+        expiresAt: expiresAt?.toISOString(),
+      },
     });
 
-    return { key: fullKey, id, start };
+    // better-auth returns the key record. The actual raw key is in the response.
+    // NOTE: Depending on better-auth version, you might need to adjust the field names.
+    return {
+      key: result.key,
+      id: result.id,
+      start: result.start,
+    };
   }
 
   async verifyApiKey(keyValue: string): Promise<VerifyResult> {
-    const cacheKey = `apikey:verify:${keyValue}`;
+    const cacheKey = `apiKey:verify:${keyValue}`;
 
     const cached = await this.cache.get<VerifyResult>(cacheKey);
     if (cached !== null) return cached;
 
-    const rows = await this.db
-      .select()
-      .from(apikey)
-      .where(eq(apikey.key, keyValue))
-      .limit(1);
+    // Use better-auth verification logic
+    const result = await this.authService.auth.api.verifyApiKey({
+      body: {
+        key: keyValue,
+      },
+    });
 
-    if (!rows.length) {
-      const result: VerifyResult = { valid: false };
-      // Cache negative results briefly to prevent DB hammering with bad keys.
-      await this.cache.set(cacheKey, result, 10);
-      return result;
+    if (!result.valid) {
+      const failResult: VerifyResult = { valid: false };
+      await this.cache.set(cacheKey, failResult, 10);
+      return failResult;
     }
 
-    const record = rows[0];
-    if (!record.enabled || (record.expiresAt && record.expiresAt < new Date())) {
-      const result: VerifyResult = { valid: false };
-      await this.cache.set(cacheKey, result, APIKEY_VERIFY_TTL);
-      return result;
-    }
+    // Extract permissions. better-auth stores them as a JSON object.
+    // e.g. { api: ['admin'] }
+    const rawPermissions = result.key?.permissions as any;
+    const permissionsList = rawPermissions?.api || ['user'];
 
-    // Fire-and-forget request count update — don't await to keep latency low.
-    void this.db
-      .update(apikey)
-      .set({
-        requestCount: (record.requestCount ?? 0) + 1,
-        lastRequest: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(apikey.id, record.id));
-
-    const result: VerifyResult = {
+    const verifyResult: VerifyResult = {
       valid: true,
-      userId: record.userId,
-      keyId: record.id,
+      userId: result.key?.userId,
+      keyId: result.key?.id,
+      permissions: permissionsList,
     };
-    await this.cache.set(cacheKey, result, APIKEY_VERIFY_TTL);
-    return result;
+
+    await this.cache.set(cacheKey, verifyResult, APIKEY_VERIFY_TTL);
+    return verifyResult;
   }
 
   async listApiKeys(userId: string): Promise<ApiKeyRecord[]> {
-    return this.db
+    const rows = await this.db
       .select({
-        id: apikey.id,
-        name: apikey.name,
-        start: apikey.start,
-        userId: apikey.userId,
-        enabled: apikey.enabled,
-        createdAt: apikey.createdAt,
-        expiresAt: apikey.expiresAt,
+        id: apiKey.id,
+        name: apiKey.name,
+        start: apiKey.start,
+        userId: apiKey.userId,
+        enabled: apiKey.enabled,
+        createdAt: apiKey.createdAt,
+        expiresAt: apiKey.expiresAt,
+        permissions: apiKey.permissions,
       })
-      .from(apikey)
-      .where(eq(apikey.userId, userId));
+      .from(apiKey)
+      .where(eq(apiKey.userId, userId));
+
+    return rows.map((r) => ({
+      ...r,
+      // Normalize permissions for the UI
+      permissions: r.permissions ? JSON.parse(r.permissions)?.api?.[0] : 'user',
+    }));
   }
 
   async revokeApiKey(keyId: string, userId: string): Promise<void> {
     const rows = await this.db
       .select()
-      .from(apikey)
-      .where(eq(apikey.id, keyId))
+      .from(apiKey)
+      .where(eq(apiKey.id, keyId))
       .limit(1);
 
     if (!rows.length) throw new NotFoundException('API key not found');
@@ -140,24 +139,34 @@ export class ApiKeyService {
       throw new BadRequestException('API key does not belong to this user');
     }
 
+    // Use better-auth API if available, or direct DB update.
+    // Direct DB update is safe if we invalidate the cache.
     await this.db
-      .update(apikey)
+      .update(apiKey)
       .set({ enabled: false, updatedAt: new Date() })
-      .where(eq(apikey.id, keyId));
+      .where(eq(apiKey.id, keyId));
 
-    // Invalidate the cached verification result immediately on revoke.
-    await this.cache.del(`apikey:verify:${rows[0].key}`);
+    await this.cache.del(`apiKey:verify:${rows[0].key}`);
   }
 
-  async getUserFromSession(sessionToken: string): Promise<string | null> {
-    const cacheKey = `session:user:${sessionToken}`;
+  async getUserFromSession(
+    sessionToken: string,
+  ): Promise<{ userId: string; role: string } | null> {
+    const cacheKey = `session:user-full:${sessionToken}`;
 
-    const cached = await this.cache.get<string | null>(cacheKey);
+    const cached = await this.cache.get<{ userId: string; role: string } | null>(
+      cacheKey,
+    );
     if (cached !== null) return cached;
 
     const rows = await this.db
-      .select()
+      .select({
+        userId: user.id,
+        role: user.role,
+        expiresAt: session.expiresAt,
+      })
       .from(session)
+      .innerJoin(user, eq(session.userId, user.id))
       .where(eq(session.token, sessionToken))
       .limit(1);
 
@@ -165,8 +174,9 @@ export class ApiKeyService {
     const s = rows[0];
     if (s.expiresAt < new Date()) return null;
 
-    await this.cache.set(cacheKey, s.userId, SESSION_TTL);
-    return s.userId;
+    const result = { userId: s.userId, role: s.role };
+    await this.cache.set(cacheKey, result, SESSION_TTL);
+    return result;
   }
 }
 

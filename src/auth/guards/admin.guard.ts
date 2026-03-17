@@ -48,8 +48,8 @@ export class AdminGuard implements CanActivate {
       );
     }
 
-    const userId = await this.apiKeyService.getUserFromSession(token);
-    if (!userId) {
+    const sessionInfo = await this.apiKeyService.getUserFromSession(token);
+    if (!sessionInfo) {
       throw new ForbiddenException('Invalid or expired session token.');
     }
 
@@ -57,7 +57,7 @@ export class AdminGuard implements CanActivate {
     const rows = await this.db
       .select({ id: user.id, role: user.role })
       .from(user)
-      .where(eq(user.id, userId))
+      .where(eq(user.id, sessionInfo.userId))
       .limit(1);
 
     if (!rows.length || rows[0].role !== 'admin') {
@@ -68,7 +68,7 @@ export class AdminGuard implements CanActivate {
 
     // Set adminUser on the request for downstream use
     (req as unknown as Record<string, unknown>)['adminUser'] = {
-      userId,
+      userId: sessionInfo.userId,
       role: rows[0].role,
     };
 

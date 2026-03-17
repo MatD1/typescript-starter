@@ -46,16 +46,18 @@ export class ApiKeyGuard implements CanActivate {
       (req as unknown as Record<string, unknown>)['user'] = {
         userId: result.userId,
         keyId: result.keyId,
+        permissions: result.permissions,
       };
       return true;
     }
 
-    const userId = await this.apiKeyService.getUserFromSession(credential);
-    if (!userId) {
+    const sessionInfo = await this.apiKeyService.getUserFromSession(credential);
+    if (!sessionInfo) {
       throw new UnauthorizedException('Invalid or expired session token');
     }
     (req as unknown as Record<string, unknown>)['user'] = {
-      userId,
+      userId: sessionInfo.userId,
+      role: sessionInfo.role,
       keyId: undefined,
     };
     return true;

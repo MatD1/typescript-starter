@@ -15,6 +15,7 @@ import {
   gtfsCalendar,
   gtfsCalendarDate,
   gtfsStopTime,
+  gtfsStopRoute,
 } from '../database/schema/gtfs.schema';
 import { CacheService } from '../cache/cache.service';
 import { CacheTTL } from '../cache/cache.constants';
@@ -81,6 +82,7 @@ export class GtfsStaticService {
 
       const buffer = Buffer.from(response.data);
       await this.processZip(buffer, mode);
+      await this.refreshStopRoutesMapping(mode);
       this.logger.log(`Completed GTFS static ingestion for: ${mode}`);
       return { mode, success: true };
     } catch (err) {
@@ -523,5 +525,29 @@ export class GtfsStaticService {
     }
     const result = await query;
     return result[0]?.total ?? 0;
+  }
+
+  /**
+   * Refreshes the mapping between stops and routes.
+   * This is a heavy operation that performs a DISTINCT join across stop_times and trips.
+   * It should be called after GTFS static data has been updated.
+   */
+  async refreshStopRoutesMapping(mode?: string): Promise<void> {
+    this.logger.log(`Refreshing stop-routes mapping${mode ? ` for mode: ${mode}` : ''}...`);
+
+    // We use a raw SQL approach for efficiency here as Drizzle's INSERT INTO ... SELECT
+    // can be more concisely expressed this way for complex DISTINCT joins.
+    const modeClause = mode ? sql`WHERE st.mode = ${mode}` : sql``;
+
+    await this.db.execute(sql`
+      INSERT INTO ${gtfsStopRoute} (stop_id, route_id, mode)
+      SELECT DISTINCT st.stop_id, t.route_id, st.mode
+      FROM ${gtfsStopTime} st
+      JOIN ${gtfsTrip} t ON st.trip_id = t.trip_id
+      ${modeClause}
+      ON CONFLICT (stop_id, route_id) DO NOTHING
+    `);
+
+    this.logger.log(`Completed stop-routes mapping refresh.`);
   }
 }

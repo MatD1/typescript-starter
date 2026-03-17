@@ -1,4 +1,5 @@
 import { Field, Float, Int, ObjectType } from '@nestjs/graphql';
+import { GtfsRouteObject } from '../../gtfs-static/dto/gtfs-static.objects';
 
 @ObjectType()
 export class StationObject {
@@ -31,4 +32,7 @@ export class StationObject {
 
   @Field({ nullable: true })
   mode?: string;
+
+  @Field(() => [GtfsRouteObject], { nullable: true })
+  routes?: GtfsRouteObject[];
 }

@@ -2,6 +2,7 @@ import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { apiKey } from '@better-auth/api-key';
 import { DRIZZLE } from '../database/database.module';
 import type { DrizzleDB } from '../database/database.module';
 import * as authSchema from '../database/schema/auth.schema';
@@ -38,6 +39,16 @@ export class AuthService implements OnModuleInit {
         },
       },
 
+      plugins: [
+        apiKey({
+          permissions: {
+            defaultPermissions: {
+              api: ['user'],
+            },
+          },
+        }),
+      ],
+
       // Disable CSRF check in development so API testing tools (Postman,
       // curl, Insomnia) work without needing to send an Origin header.
       // In production the check stays on for proper CSRF protection.
@@ -52,6 +63,7 @@ export class AuthService implements OnModuleInit {
           session: authSchema.session,
           account: authSchema.account,
           verification: authSchema.verification,
+          apiKey: authSchema.apiKey,
         },
       }),
 

@@ -60,7 +60,7 @@ export const verification = pgTable('verification', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
-export const apikey = pgTable('apikey', {
+export const apiKey = pgTable('api_key', {
   id: text('id').primaryKey(),
   name: text('name'),
   start: text('start'),
