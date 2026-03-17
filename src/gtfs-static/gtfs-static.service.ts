@@ -31,10 +31,7 @@ const INTERCITY_ROUTE_SHORT_NAMES = [
 const GTFS_STATIC_URLS: Record<string, string> = {
   sydneytrains:
     'https://api.transport.nsw.gov.au/v1/gtfs/schedule/sydneytrains',
-  intercity: 'https://api.transport.nsw.gov.au/v1/gtfs/schedule/intercity',
-  buses: 'https://api.transport.nsw.gov.au/v1/gtfs/schedule/buses/1',
   metro: 'https://api.transport.nsw.gov.au/v1/gtfs/schedule/metro',
-  ferries: 'https://api.transport.nsw.gov.au/v1/gtfs/schedule/ferries',
   lightrail: 'https://api.transport.nsw.gov.au/v1/gtfs/schedule/lightrail',
   nswtrains: 'https://api.transport.nsw.gov.au/v1/gtfs/schedule/nswtrains',
 };
@@ -58,7 +55,11 @@ export class GtfsStaticService {
     { mode: string; success: boolean; error?: string }[]
   > {
     const modes = Object.keys(GTFS_STATIC_URLS);
-    return Promise.all(modes.map((mode) => this.ingestMode(mode)));
+    const results: { mode: string; success: boolean; error?: string }[] = [];
+    for (const mode of modes) {
+      results.push(await this.ingestMode(mode));
+    }
+    return results;
   }
 
   async ingestMode(

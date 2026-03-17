@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Query,
+  UseGuards,
+  ParseIntPipe,
+  ParseEnumPipe,
+} from '@nestjs/common';
 import {
   ApiOkResponse,
   ApiOperation,
@@ -7,17 +15,19 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { GtfsStaticService } from './gtfs-static.service';
-import { TRANSPORT_MODES } from '../transport/transport.types';
+import { TRANSPORT_MODES, TransportModeEnum } from '../transport/transport.types';
+import { AdminGuard } from '../auth/guards/admin.guard';
 
 @ApiTags('gtfs-static')
 @ApiSecurity('X-API-Key')
 @Controller('gtfs-static')
 export class GtfsStaticController {
-  constructor(private readonly gtfsStaticService: GtfsStaticService) { }
+  constructor(private readonly gtfsStaticService: GtfsStaticService) {}
 
   @Post('ingest')
+  @UseGuards(AdminGuard)
   @ApiOperation({
-    summary: 'Trigger GTFS static data ingestion (admin)',
+    summary: 'Trigger GTFS static data ingestion (admin only)',
     description:
       'Downloads and ingests GTFS static data from NSW Open Data. This runs automatically nightly; use this to trigger manually.',
   })
@@ -27,7 +37,10 @@ export class GtfsStaticController {
     enum: TRANSPORT_MODES,
     description: 'Ingest single mode (omit for all)',
   })
-  ingest(@Query('mode') mode?: string) {
+  ingest(
+    @Query('mode', new ParseEnumPipe(TransportModeEnum, { optional: true }))
+    mode?: string,
+  ) {
     if (mode) return this.gtfsStaticService.ingestMode(mode);
     return this.gtfsStaticService.ingestAll();
   }
@@ -40,8 +53,18 @@ export class GtfsStaticController {
       'Default limit is 100. Increment `offset` by `limit` to page through all records.',
   })
   @ApiQuery({ name: 'mode', required: false, enum: TRANSPORT_MODES })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Max records to return (default 100)' })
-  @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Number of records to skip (default 0)' })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Max records to return (default 100)',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of records to skip (default 0)',
+  })
   @ApiOkResponse({
     description: 'Paginated list of routes',
     schema: {
@@ -55,21 +78,21 @@ export class GtfsStaticController {
     },
   })
   getRoutes(
-    @Query('mode') mode?: string,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
+    @Query('mode', new ParseEnumPipe(TransportModeEnum, { optional: true }))
+    mode?: string,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+    @Query('offset', new ParseIntPipe({ optional: true })) offset?: number,
   ) {
-    return this.gtfsStaticService.getRoutes(
-      mode,
-      limit ? Number(limit) : 100,
-      offset ? Number(offset) : 0,
-    );
+    return this.gtfsStaticService.getRoutes(mode, limit ?? 100, offset ?? 0);
   }
 
   @Get('routes/count')
   @ApiOperation({ summary: 'Get total count of GTFS static routes' })
   @ApiQuery({ name: 'mode', required: false, enum: TRANSPORT_MODES })
-  getRoutesCount(@Query('mode') mode?: string) {
+  getRoutesCount(
+    @Query('mode', new ParseEnumPipe(TransportModeEnum, { optional: true }))
+    mode?: string,
+  ) {
     return this.gtfsStaticService.getRoutesCount(mode);
   }
 
@@ -82,8 +105,18 @@ export class GtfsStaticController {
       'Increment `offset` by `limit` to page through all records.',
   })
   @ApiQuery({ name: 'mode', required: false, enum: TRANSPORT_MODES })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Max records to return (default 100)' })
-  @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Number of records to skip (default 0)' })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Max records to return (default 100)',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of records to skip (default 0)',
+  })
   @ApiOkResponse({
     description: 'Paginated list of stops',
     schema: {
@@ -97,21 +130,21 @@ export class GtfsStaticController {
     },
   })
   getStops(
-    @Query('mode') mode?: string,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
+    @Query('mode', new ParseEnumPipe(TransportModeEnum, { optional: true }))
+    mode?: string,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+    @Query('offset', new ParseIntPipe({ optional: true })) offset?: number,
   ) {
-    return this.gtfsStaticService.getStops(
-      mode,
-      limit ? Number(limit) : 100,
-      offset ? Number(offset) : 0,
-    );
+    return this.gtfsStaticService.getStops(mode, limit ?? 100, offset ?? 0);
   }
 
   @Get('stops/count')
   @ApiOperation({ summary: 'Get total count of GTFS static stops' })
   @ApiQuery({ name: 'mode', required: false, enum: TRANSPORT_MODES })
-  getStopsCount(@Query('mode') mode?: string) {
+  getStopsCount(
+    @Query('mode', new ParseEnumPipe(TransportModeEnum, { optional: true }))
+    mode?: string,
+  ) {
     return this.gtfsStaticService.getStopsCount(mode);
   }
 
@@ -123,8 +156,18 @@ export class GtfsStaticController {
       'Default limit is 100. Increment `offset` by `limit` to page through all records.',
   })
   @ApiQuery({ name: 'routeId', required: false })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Max records to return (default 100)' })
-  @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Number of records to skip (default 0)' })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Max records to return (default 100)',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of records to skip (default 0)',
+  })
   @ApiOkResponse({
     description: 'Paginated list of trips',
     schema: {
@@ -139,14 +182,10 @@ export class GtfsStaticController {
   })
   getTrips(
     @Query('routeId') routeId?: string,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+    @Query('offset', new ParseIntPipe({ optional: true })) offset?: number,
   ) {
-    return this.gtfsStaticService.getTrips(
-      routeId,
-      limit ? Number(limit) : 100,
-      offset ? Number(offset) : 0,
-    );
+    return this.gtfsStaticService.getTrips(routeId, limit ?? 100, offset ?? 0);
   }
 
   @Get('trips/count')
@@ -165,8 +204,18 @@ export class GtfsStaticController {
   })
   @ApiQuery({ name: 'tripId', required: false })
   @ApiQuery({ name: 'stopId', required: false })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Max records to return (default 100)' })
-  @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Number of records to skip (default 0)' })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Max records to return (default 100)',
+  })
+  @ApiQuery({
+    name: 'offset',
+    required: false,
+    type: Number,
+    description: 'Number of records to skip (default 0)',
+  })
   @ApiOkResponse({
     description: 'Paginated list of stop times',
     schema: {
@@ -182,14 +231,14 @@ export class GtfsStaticController {
   getStopTimes(
     @Query('tripId') tripId?: string,
     @Query('stopId') stopId?: string,
-    @Query('limit') limit?: string,
-    @Query('offset') offset?: string,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+    @Query('offset', new ParseIntPipe({ optional: true })) offset?: number,
   ) {
     return this.gtfsStaticService.getStopTimes(
       tripId,
       stopId,
-      limit ? Number(limit) : 100,
-      offset ? Number(offset) : 0,
+      limit ?? 100,
+      offset ?? 0,
     );
   }
 }

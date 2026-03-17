@@ -4,6 +4,8 @@ import {
   NotFoundException,
   Param,
   Query,
+  ParseFloatPipe,
+  ParseIntPipe,
 } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { StationsService } from './stations.service';
@@ -18,8 +20,11 @@ export class StationsController {
   @ApiOperation({ summary: 'Search for stations/stops by name' })
   @ApiQuery({ name: 'q', required: true, description: 'Search term' })
   @ApiQuery({ name: 'limit', required: false, type: Number })
-  search(@Query('q') q: string, @Query('limit') limit?: string) {
-    return this.stationsService.search(q, limit ? Number(limit) : 20);
+  search(
+    @Query('q') q: string,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
+  ) {
+    return this.stationsService.search(q, limit ?? 20);
   }
 
   @Get('nearby')
@@ -33,16 +38,16 @@ export class StationsController {
   })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   nearby(
-    @Query('lat') lat: string,
-    @Query('lon') lon: string,
-    @Query('radius') radius?: string,
-    @Query('limit') limit?: string,
+    @Query('lat', ParseFloatPipe) lat: number,
+    @Query('lon', ParseFloatPipe) lon: number,
+    @Query('radius', new ParseIntPipe({ optional: true })) radius?: number,
+    @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
     return this.stationsService.findNearby(
-      Number(lat),
-      Number(lon),
-      radius ? Number(radius) : 500,
-      limit ? Number(limit) : 20,
+      lat,
+      lon,
+      radius ?? 500,
+      limit ?? 20,
     );
   }
 

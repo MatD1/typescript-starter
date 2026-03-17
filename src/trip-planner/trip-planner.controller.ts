@@ -1,4 +1,11 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Query,
+  ParseIntPipe,
+  ParseFloatPipe,
+  ParseBoolPipe,
+} from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { TripPlannerService } from './trip-planner.service';
 
@@ -46,8 +53,10 @@ export class TripPlannerController {
     @Query('destCoord') destCoord?: string,
     @Query('itdDate') itdDate?: string,
     @Query('itdTime') itdTime?: string,
-    @Query('calcNumberOfTrips') calcNumberOfTrips?: string,
-    @Query('wheelchair') wheelchair?: string,
+    @Query('calcNumberOfTrips', new ParseIntPipe({ optional: true }))
+    calcNumberOfTrips?: number,
+    @Query('wheelchair', new ParseBoolPipe({ optional: true }))
+    wheelchair?: boolean,
   ) {
     return this.tripPlannerService.planTrip({
       originName,
@@ -58,10 +67,8 @@ export class TripPlannerController {
       destCoord,
       itdDate,
       itdTime,
-      calcNumberOfTrips: calcNumberOfTrips
-        ? Number(calcNumberOfTrips)
-        : undefined,
-      wheelchair: wheelchair === 'true',
+      calcNumberOfTrips,
+      wheelchair: wheelchair ?? false,
     });
   }
 
@@ -113,13 +120,13 @@ export class TripPlannerController {
     description: 'Radius in metres (default 500)',
   })
   searchNearby(
-    @Query('lat') lat: string,
-    @Query('lon') lon: string,
-    @Query('radius') radius?: string,
+    @Query('lat', ParseFloatPipe) lat: number,
+    @Query('lon', ParseFloatPipe) lon: number,
+    @Query('radius', new ParseIntPipe({ optional: true })) radius?: number,
   ) {
     return this.tripPlannerService.searchByCoord({
       coord: `${lon}:${lat}:EPSG:4326`,
-      radius_1: radius ? Number(radius) : 500,
+      radius_1: radius ?? 500,
       type_1: 'BUS_POINT',
     });
   }

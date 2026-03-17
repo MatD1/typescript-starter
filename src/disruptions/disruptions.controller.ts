@@ -1,7 +1,7 @@
-import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query, ParseEnumPipe } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { DisruptionsService } from './disruptions.service';
-import { TRANSPORT_MODES } from '../transport/transport.types';
+import { TRANSPORT_MODES, TransportModeEnum } from '../transport/transport.types';
 import type { TransportMode } from '../transport/transport.types';
 
 @ApiTags('disruptions')
@@ -20,7 +20,8 @@ export class DisruptionsController {
       'Filter by effect type (e.g. DETOUR, REDUCED_SERVICE, NO_SERVICE)',
   })
   getDisruptions(
-    @Query('mode') mode?: TransportMode,
+    @Query('mode', new ParseEnumPipe(TransportModeEnum, { optional: true }))
+    mode?: TransportMode,
     @Query('effect') effect?: string,
   ) {
     return this.disruptionsService.getDisruptions(mode, effect);

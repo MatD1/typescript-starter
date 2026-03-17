@@ -11,7 +11,7 @@ import { UseGuards } from '@nestjs/common';
 import { GqlExecutionContext } from '@nestjs/graphql';
 import type { Request } from 'express';
 import { Public } from '../common/decorators/public.decorator';
-import { AdminGuard } from './guards/admin.guard';
+import { AdminGuard } from '../auth/guards/admin.guard';
 import { AdminService } from './admin.service';
 import {
   AdminUser,

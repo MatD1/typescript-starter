@@ -411,3 +411,4 @@ docs/getvehicleposition_v2_03.yaml
 docs/ADMIN_GRAPHQL_QUERIES.md
 .gitignore
 docs/SECURITY.md
+conductor/api-security-plan.md

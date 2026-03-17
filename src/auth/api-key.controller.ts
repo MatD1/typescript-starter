@@ -8,6 +8,7 @@ import {
   Req,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { IsDate, IsOptional, IsString } from 'class-validator';
@@ -28,6 +29,7 @@ class CreateApiKeyDto {
 
 @Public()
 @ApiTags('auth')
+@Throttle({ default: { limit: 10, ttl: 60_000 } })
 @Controller('api-keys')
 export class ApiKeyController {
   constructor(private readonly apiKeyService: ApiKeyService) {}

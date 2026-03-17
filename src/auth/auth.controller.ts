@@ -1,4 +1,5 @@
 import { All, Controller, Next, Req, Res } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Request, Response, NextFunction } from 'express';
 import { toNodeHandler } from 'better-auth/node';
 import { AuthService } from './auth.service';
@@ -6,6 +7,7 @@ import { Public } from '../common/decorators/public.decorator';
 
 @Public()
 @Controller('auth')
+@Throttle({ default: { limit: 10, ttl: 900_000 } })
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 

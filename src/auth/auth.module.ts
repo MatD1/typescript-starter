@@ -7,6 +7,7 @@ import { SessionController } from './session.controller';
 import { ApiKeyService } from './api-key.service';
 import { ApiKeyController } from './api-key.controller';
 import { ApiKeyGuard } from './guards/api-key.guard';
+import { AdminGuard } from './guards/admin.guard';
 import { CacheModule } from '../cache/cache.module';
 
 @Module({
@@ -17,7 +18,13 @@ import { CacheModule } from '../cache/cache.module';
     SessionController,
     ApiKeyController,
   ],
-  providers: [AuthService, SupabaseAuthService, ApiKeyService, ApiKeyGuard],
-  exports: [AuthService, ApiKeyService, ApiKeyGuard],
+  providers: [
+    AuthService,
+    SupabaseAuthService,
+    ApiKeyService,
+    ApiKeyGuard,
+    AdminGuard,
+  ],
+  exports: [AuthService, ApiKeyService, ApiKeyGuard, AdminGuard],
 })
 export class AuthModule {}

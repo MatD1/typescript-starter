@@ -3,10 +3,11 @@ import {
   Get,
   NotFoundException,
   Query,
+  ParseEnumPipe,
 } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { RealtimeService } from './realtime.service';
-import { TRANSPORT_MODES } from '../transport/transport.types';
+import { TRANSPORT_MODES, TransportModeEnum } from '../transport/transport.types';
 import type { TransportMode } from '../transport/transport.types';
 
 @ApiTags('realtime')
@@ -23,7 +24,10 @@ export class RealtimeController {
     enum: TRANSPORT_MODES,
     description: 'Transport mode (omit for all modes)',
   })
-  getVehiclePositions(@Query('mode') mode?: TransportMode) {
+  getVehiclePositions(
+    @Query('mode', new ParseEnumPipe(TransportModeEnum, { optional: true }))
+    mode?: TransportMode,
+  ) {
     return this.realtimeService.getVehiclePositions(mode);
   }
 
@@ -35,7 +39,10 @@ export class RealtimeController {
     enum: TRANSPORT_MODES,
     description: 'Transport mode (omit for all modes)',
   })
-  getTripUpdates(@Query('mode') mode?: TransportMode) {
+  getTripUpdates(
+    @Query('mode', new ParseEnumPipe(TransportModeEnum, { optional: true }))
+    mode?: TransportMode,
+  ) {
     return this.realtimeService.getTripUpdates(mode);
   }
 
@@ -60,7 +67,8 @@ export class RealtimeController {
   })
   async trackTrip(
     @Query('tripId') tripId: string,
-    @Query('mode') mode?: TransportMode,
+    @Query('mode', new ParseEnumPipe(TransportModeEnum, { optional: true }))
+    mode?: TransportMode,
   ) {
     const result = await this.realtimeService.trackTrip(tripId, mode);
     if (!result) {

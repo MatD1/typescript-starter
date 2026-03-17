@@ -10,7 +10,7 @@ import type { Request } from 'express';
 import { DRIZZLE } from '../../database/database.module';
 import type { DrizzleDB } from '../../database/database.module';
 import { user } from '../../database/schema/auth.schema';
-import { ApiKeyService } from '../../auth/api-key.service';
+import { ApiKeyService } from '../api-key.service';
 import { Inject } from '@nestjs/common';
 
 @Injectable()

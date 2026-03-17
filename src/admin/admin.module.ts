@@ -7,7 +7,7 @@ import { GtfsStaticModule } from '../gtfs-static/gtfs-static.module';
 import { AdminService } from './admin.service';
 import { AdminController } from './admin.controller';
 import { AdminResolver } from './admin.resolver';
-import { AdminGuard } from './guards/admin.guard';
+import { AdminGuard } from '../auth/guards/admin.guard';
 
 @Module({
   imports: [
@@ -18,6 +18,6 @@ import { AdminGuard } from './guards/admin.guard';
     HttpModule,
   ],
   controllers: [AdminController],
-  providers: [AdminService, AdminResolver, AdminGuard],
+  providers: [AdminService, AdminResolver],
 })
 export class AdminModule {}

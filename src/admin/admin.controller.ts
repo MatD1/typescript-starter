@@ -12,6 +12,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiTags,
   ApiOperation,
@@ -27,7 +28,7 @@ import {
 } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { Public } from '../common/decorators/public.decorator';
-import { AdminGuard } from './guards/admin.guard';
+import { AdminGuard } from '../auth/guards/admin.guard';
 import { AdminService } from './admin.service';
 import {
   AdminUsersQueryDto,
@@ -125,6 +126,7 @@ export class AdminController {
 
   @Delete('users/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Delete a user and all associated data' })
   @ApiParam({ name: 'id', description: 'User ID' })
   @ApiNoContentResponse()
@@ -163,6 +165,7 @@ export class AdminController {
 
   @Delete('api-keys/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Delete an API key (hard delete)' })
   @ApiParam({ name: 'id', description: 'API Key ID' })
   @ApiNoContentResponse()
@@ -172,6 +175,7 @@ export class AdminController {
   }
 
   @Post('api-keys/:id/reset-usage')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Reset request count and remaining for an API key' })
   @ApiParam({ name: 'id', description: 'API Key ID' })
   @ApiOkResponse({ type: AdminApiKeySwagger })
@@ -263,6 +267,7 @@ export class AdminController {
   }
 
   @Post('gtfs/ingest')
+  @Throttle({ default: { limit: 1, ttl: 300_000 } })
   @ApiOperation({ summary: 'Trigger a full GTFS static data ingest' })
   @ApiOkResponse({ type: GtfsIngestResultSwagger })
   triggerGtfsIngest() {
@@ -270,6 +275,7 @@ export class AdminController {
   }
 
   @Delete('gtfs/cache')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Flush all Redis cache entries' })
   @ApiNoContentResponse()
