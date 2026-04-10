@@ -2,6 +2,7 @@ import { Args, Int, Parent, Query, ResolveField, Resolver } from '@nestjs/graphq
 import { TripPlannerService } from './trip-planner.service';
 import {
   TripResultObject,
+  TripPlannerResponseObject,
   StopObject,
   DepartureObject,
   LegObject,
@@ -13,7 +14,7 @@ import { StopFinderTypeEnum } from '../transport/transport.types';
 export class TripPlannerResolver {
   constructor(private readonly tripPlannerService: TripPlannerService) { }
 
-  @Query(() => [TripResultObject], {
+  @Query(() => TripPlannerResponseObject, {
     description: 'Plan a journey between two locations.',
   })
   planTrip(
@@ -36,6 +37,7 @@ export class TripPlannerResolver {
     @Args('calcNumberOfTrips', { nullable: true, type: () => Int })
     calcNumberOfTrips?: number,
     @Args('wheelchair', { nullable: true }) wheelchair?: boolean,
+    @Args('context', { nullable: true }) context?: string,
   ) {
     return this.tripPlannerService.planTrip({
       originId,
@@ -48,6 +50,7 @@ export class TripPlannerResolver {
       itdTime,
       calcNumberOfTrips,
       wheelchair,
+      context,
     });
   }
 
