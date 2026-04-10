@@ -56,6 +56,7 @@ import {
   GtfsStatusSwagger,
   GtfsIngestResultSwagger,
   SystemHealthSwagger,
+  SystemOverviewSwagger,
 } from './dto/admin.swagger-schemas';
 
 @ApiTags('Admin')
@@ -77,12 +78,13 @@ import {
   GtfsStatusSwagger,
   GtfsIngestResultSwagger,
   SystemHealthSwagger,
+  SystemOverviewSwagger,
 )
 @Public()
 @UseGuards(AdminGuard)
 @Controller('admin')
 export class AdminController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(private readonly adminService: AdminService) { }
 
   // ─── Auth ────────────────────────────────────────────────────────────────
 
@@ -290,6 +292,13 @@ export class AdminController {
   @ApiOkResponse({ type: SystemHealthSwagger })
   getHealth() {
     return this.adminService.getHealth();
+  }
+
+  @Get('system/overview')
+  @ApiOperation({ summary: 'Combined system overview including health and 24h stats' })
+  @ApiOkResponse({ type: SystemOverviewSwagger })
+  getSystemOverview() {
+    return this.adminService.getSystemOverview();
   }
 }
 

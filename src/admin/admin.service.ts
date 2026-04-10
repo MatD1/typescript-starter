@@ -54,6 +54,7 @@ import type {
   GtfsStatus,
   GtfsIngestResult,
   SystemHealth,
+  SystemOverview,
 } from './dto/admin.types';
 
 @Injectable()
@@ -66,7 +67,7 @@ export class AdminService {
     private readonly apiKeyService: ApiKeyService,
     private readonly gtfsStaticService: GtfsStaticService,
     private readonly httpService: HttpService,
-  ) {}
+  ) { }
 
   // ─── Auth ──────────────────────────────────────────────────────────────────
 
@@ -266,7 +267,9 @@ export class AdminService {
       updatedAt: new Date(),
     };
     if (dto.enabled !== undefined) updates.enabled = dto.enabled;
+    if (dto.rateLimitEnabled !== undefined) updates.rateLimitEnabled = dto.rateLimitEnabled;
     if (dto.rateLimitMax !== undefined) updates.rateLimitMax = dto.rateLimitMax;
+    if (dto.rateLimitTimeWindow !== undefined) updates.rateLimitTimeWindow = dto.rateLimitTimeWindow;
     if (dto.permissions !== undefined) updates.permissions = dto.permissions;
 
     const updated = await this.db
@@ -274,6 +277,9 @@ export class AdminService {
       .set(updates)
       .where(eq(apiKey.id, id))
       .returning();
+
+    // Invalidate the cache to enforce new settings immediately
+    await this.cache.del(`apiKey:verify:${rows[0].key}`);
 
     return this.mapApiKey(updated[0]);
   }
@@ -607,10 +613,24 @@ export class AdminService {
       this.checkTfNsw(),
     ]);
 
+    const memoryUsage = process.memoryUsage();
+    const memoryUsageMb = Math.round((memoryUsage.heapUsed / 1024 / 1024) * 100) / 100;
+    const uptimeSeconds = Math.round(process.uptime());
+
     return {
       healthy: checks.every((c) => c.status === 'ok'),
       checks,
+      process: { memoryUsageMb, uptimeSeconds },
     };
+  }
+
+  async getSystemOverview(): Promise<SystemOverview> {
+    const [health, stats] = await Promise.all([
+      this.getHealth(),
+      this.getOverviewStats(),
+    ]);
+
+    return { health, stats };
   }
 
   private async checkDb(): Promise<{
@@ -703,7 +723,9 @@ export class AdminService {
       start: row.start ?? undefined,
       userId: row.userId,
       enabled: row.enabled,
+      rateLimitEnabled: row.rateLimitEnabled,
       rateLimitMax: row.rateLimitMax ?? undefined,
+      rateLimitTimeWindow: row.rateLimitTimeWindow ?? undefined,
       requestCount: row.requestCount ?? 0,
       remaining: row.remaining ?? undefined,
       expiresAt: row.expiresAt ?? undefined,

@@ -418,3 +418,21 @@ lambda-env.json
 api.zip
 deploy.sh
 docker-compose.yml
+
+
+# Terraform secrets
+*.tfvars
+*.tfstate
+*.tfstate.backup
+.terraform/
+
+# Build artifacts
+api.zip
+dist/bundle
+test_ec2.py
+jrail-ec2
+jrail-ec2.pub
+out.json
+infra/.terraform.lock.hcl
+
+/infra

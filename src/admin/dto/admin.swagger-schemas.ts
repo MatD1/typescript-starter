@@ -73,8 +73,14 @@ export class AdminApiKeySwagger {
   @ApiProperty({ description: 'Whether the key is enabled' })
   enabled!: boolean;
 
-  @ApiPropertyOptional({ description: 'Max requests per minute (0 = unlimited)' })
+  @ApiProperty({ description: 'Is rate limiting enabled' })
+  rateLimitEnabled!: boolean;
+
+  @ApiPropertyOptional({ description: 'Max requests per minute/window (0 = unlimited)' })
   rateLimitMax?: number;
+
+  @ApiPropertyOptional({ description: 'Rate limit time window in milliseconds' })
+  rateLimitTimeWindow?: number;
 
   @ApiProperty({ description: 'Total request count' })
   requestCount!: number;
@@ -258,10 +264,29 @@ export class SystemHealthCheckSwagger {
   latencyMs!: number;
 }
 
+export class ProcessMetricsSwagger {
+  @ApiProperty({ description: 'Process memory usage in MB' })
+  memoryUsageMb!: number;
+
+  @ApiProperty({ description: 'Process uptime in seconds' })
+  uptimeSeconds!: number;
+}
+
 export class SystemHealthSwagger {
   @ApiProperty({ description: 'Overall health status' })
   healthy!: boolean;
 
   @ApiProperty({ type: [SystemHealthCheckSwagger], description: 'Individual check results' })
   checks!: SystemHealthCheckSwagger[];
+
+  @ApiProperty({ type: ProcessMetricsSwagger, description: 'Node.js process metrics' })
+  process!: ProcessMetricsSwagger;
+}
+
+export class SystemOverviewSwagger {
+  @ApiProperty({ type: SystemHealthSwagger, description: 'Current system health' })
+  health!: SystemHealthSwagger;
+
+  @ApiProperty({ type: AdminOverviewStatsSwagger, description: 'Stats overview' })
+  stats!: AdminOverviewStatsSwagger;
 }

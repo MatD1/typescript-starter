@@ -7,8 +7,9 @@ import {
   ParseFloatPipe,
   ParseIntPipe,
 } from '@nestjs/common';
-import { ApiOperation, ApiQuery, ApiSecurity, ApiTags } from '@nestjs/swagger';
+import { ApiOkResponse, ApiOperation, ApiQuery, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { StationsService } from './stations.service';
+import { StationObject } from './dto/station.object';
 
 @ApiTags('stations')
 @ApiSecurity('X-API-Key')
@@ -18,6 +19,7 @@ export class StationsController {
 
   @Get('search')
   @ApiOperation({ summary: 'Search for stations/stops by name' })
+  @ApiOkResponse({ type: [StationObject] })
   @ApiQuery({ name: 'q', required: true, description: 'Search term' })
   @ApiQuery({ name: 'limit', required: false, type: Number })
   search(
@@ -29,6 +31,7 @@ export class StationsController {
 
   @Get('nearby')
   @ApiOperation({ summary: 'Find stations near a coordinate' })
+  @ApiOkResponse({ type: [StationObject] })
   @ApiQuery({ name: 'lat', required: true })
   @ApiQuery({ name: 'lon', required: true })
   @ApiQuery({
@@ -53,6 +56,7 @@ export class StationsController {
 
   @Get(':stopId')
   @ApiOperation({ summary: 'Get a station by stop ID' })
+  @ApiOkResponse({ type: StationObject })
   async getById(@Param('stopId') stopId: string) {
     const station = await this.stationsService.findById(stopId);
     if (!station) throw new NotFoundException(`Station ${stopId} not found`);

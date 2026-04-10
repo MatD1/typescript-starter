@@ -9,7 +9,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBody, ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
 import type { Request } from 'express';
 import { IsDate, IsOptional, IsString, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -17,15 +17,22 @@ import { ApiKeyService } from './api-key.service';
 import { Public } from '../common/decorators/public.decorator';
 
 class CreateApiKeyDto {
+  @ApiPropertyOptional({ description: 'A descriptive name for the API key' })
   @IsString()
   @IsOptional()
   name?: string;
 
+  @ApiPropertyOptional({ description: 'Optional expiration date' })
   @IsDate()
   @IsOptional()
   @Type(() => Date)
   expiresAt?: Date;
 
+  @ApiPropertyOptional({
+    description: 'Permission level for the key',
+    enum: ['user', 'admin', 'app-authorised'],
+    default: 'user',
+  })
   @IsString()
   @IsOptional()
   @IsIn(['user', 'admin', 'app-authorised'])

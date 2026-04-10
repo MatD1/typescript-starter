@@ -62,12 +62,15 @@ const MAX_QUERY_DEPTH = 8;
     AuthModule,
     GraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,
-      autoSchemaFile: join(process.cwd(), 'src/schema.gql'),
+      autoSchemaFile: true,
       sortSchema: true,
       playground: false,
-      introspection: process.env.NODE_ENV !== 'production',
+      subscriptions: {
+        'graphql-ws': true,
+      },
+      introspection: String(process.env.ALLOW_INTROSPECTION) === 'true',
       formatError: (formattedError: GraphQLFormattedError, error: unknown) => {
-        if (process.env.NODE_ENV === 'production') {
+        if (String(process.env.ALLOW_INTROSPECTION) !== 'true') {
           return {
             message: formattedError.message,
             extensions: {
@@ -80,7 +83,7 @@ const MAX_QUERY_DEPTH = 8;
       persistedQueries: {},
       context: ({ req, res }: { req: Request; res: Response }) => ({ req, res }),
       plugins: [
-        ApolloServerPluginLandingPageLocalDefault(),
+        ApolloServerPluginLandingPageLocalDefault({ embed: true }),
         {
           // eslint-disable-next-line @typescript-eslint/require-await
           async requestDidStart() {

@@ -19,6 +19,7 @@ import {
   DepartureObject,
   LegObject,
   LocationObject,
+  TripPlannerResponseObject,
 } from './dto/trip-planner.objects';
 
 type NswApiRecord = Record<string, unknown>;
@@ -31,9 +32,22 @@ export class TripPlannerService {
     private readonly transportService: TransportService,
     private readonly gtfsStaticService: GtfsStaticService,
     private readonly cache: CacheService,
-  ) {}
+  ) { }
 
-  async planTrip(params: TripPlannerParams): Promise<TripResultObject[]> {
+  async planTrip(params: TripPlannerParams): Promise<TripPlannerResponseObject> {
+    if (params.context) {
+      try {
+        const decoded = Buffer.from(params.context, 'base64').toString('utf8');
+        const { itdDate, itdTime } = JSON.parse(decoded);
+        if (itdDate && itdTime) {
+          params.itdDate = itdDate;
+          params.itdTime = itdTime;
+        }
+      } catch (e: any) {
+        this.logger.warn(`Failed to parse context string: ${e.message}`);
+      }
+    }
+
     const cacheKey = `tripplanner:trip:${JSON.stringify(params)}`;
     return this.cache.getOrSet(
       cacheKey,
@@ -41,8 +55,33 @@ export class TripPlannerService {
         const raw = (await this.transportService.getTripPlan(
           params,
         )) as NswApiRecord;
-        const metadata = await this.gtfsStaticService.getRouteMetadataMap();
-        return this.mapTrips(raw, metadata);
+        const trips = this.mapTrips(raw);
+
+        let context: string | undefined = undefined;
+        if (trips.length > 0) {
+          const lastTrip = trips[trips.length - 1];
+          const firstLeg = lastTrip.legs[0];
+          if (firstLeg?.departureTimePlanned) {
+            const d = new Date(firstLeg.departureTimePlanned);
+            d.setMinutes(d.getMinutes() + 1);
+            const formatter = new Intl.DateTimeFormat('en-AU', {
+              timeZone: 'Australia/Sydney',
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: false,
+            });
+            const parts = formatter.formatToParts(d);
+            const getPart = (type: string) => parts.find((p) => p.type === type)?.value;
+            const itdDate = `${getPart('year')}${getPart('month')}${getPart('day')}`;
+            const itdTime = `${getPart('hour')}${getPart('minute')}`;
+            context = Buffer.from(JSON.stringify({ itdDate, itdTime })).toString('base64');
+          }
+        }
+
+        return { trips, context };
       },
       CacheTTL.TRIP_PLANS,
     );
@@ -73,8 +112,7 @@ export class TripPlannerService {
         const raw = (await this.transportService.getDepartureMonitor(
           params,
         )) as NswApiRecord;
-        const metadata = await this.gtfsStaticService.getRouteMetadataMap();
-        return this.mapDepartures(raw, metadata);
+        return this.mapDepartures(raw);
       },
       CacheTTL.DEPARTURES,
     );
@@ -135,13 +173,12 @@ export class TripPlannerService {
 
   private mapTrips(
     raw: NswApiRecord,
-    metadata: Map<string, { lineCode: string; routeColour?: string }>,
   ): TripResultObject[] {
     const journeys = (raw?.journeys as NswApiRecord[] | undefined) ?? [];
     return journeys.map((j) => {
       const legs = (j?.legs as NswApiRecord[] | undefined) ?? [];
       return {
-        legs: legs.map((l) => this.mapLeg(l, metadata)),
+        legs: legs.map((l) => this.mapLeg(l)),
         duration: j?.duration as number | undefined,
         interchanges: j?.interchanges as number | undefined,
       } satisfies TripResultObject;
@@ -150,7 +187,6 @@ export class TripPlannerService {
 
   private mapLeg(
     l: NswApiRecord,
-    metadata: Map<string, { lineCode: string; routeColour?: string }>,
   ): LegObject {
     const transport = l?.transportation as NswApiRecord | undefined;
     const origin = l?.origin as NswApiRecord | undefined;
@@ -159,7 +195,6 @@ export class TripPlannerService {
     const tripId =
       (properties?.RealtimeTripId as string | undefined) ??
       (transport?.id as string | undefined);
-    const meta = tripId ? metadata.get(tripId) : undefined;
 
     return {
       tripId,
@@ -167,8 +202,6 @@ export class TripPlannerService {
         | string
         | undefined,
       lineName: transport?.number as string | undefined,
-      lineCode: meta?.lineCode,
-      routeColour: meta?.routeColour,
       destination: (transport?.destination as NswApiRecord | undefined)
         ?.name as string | undefined,
       origin: this.mapLocation(origin),
@@ -216,7 +249,6 @@ export class TripPlannerService {
 
   private mapDepartures(
     raw: NswApiRecord,
-    metadata: Map<string, { lineCode: string; routeColour?: string }>,
   ): DepartureObject[] {
     const events = (raw?.stopEvents as NswApiRecord[] | undefined) ?? [];
     return events.map((e) => {
@@ -226,14 +258,12 @@ export class TripPlannerService {
       const tripId =
         (properties?.RealtimeTripId as string | undefined) ??
         (transport?.id as string | undefined);
-      const meta = tripId ? metadata.get(tripId) : undefined;
 
       return {
+        tripId,
         stopName: location?.name as string | undefined,
         stopId: location?.id as string | undefined,
         lineName: transport?.number as string | undefined,
-        lineCode: meta?.lineCode,
-        routeColour: meta?.routeColour,
         destination: (transport?.destination as NswApiRecord | undefined)
           ?.name as string | undefined,
         departureTimePlanned: e?.departureTimePlanned as string | undefined,

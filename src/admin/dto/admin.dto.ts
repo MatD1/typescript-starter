@@ -83,17 +83,29 @@ export class UpdateApiKeyDto {
   @IsBoolean()
   enabled?: boolean;
 
-  @ApiPropertyOptional({ description: 'Max requests per minute (0 = unlimited)', minimum: 0 })
+  @ApiPropertyOptional({ description: 'Comma-separated permission scopes' })
+  @IsOptional()
+  @IsString()
+  permissions?: string;
+
+  @ApiPropertyOptional({ description: 'Is rate limiting enabled' })
+  @IsOptional()
+  @IsBoolean()
+  rateLimitEnabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Max requests per minute/window (0 = unlimited)', minimum: 0 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(0)
   rateLimitMax?: number;
 
-  @ApiPropertyOptional({ description: 'Comma-separated permission scopes' })
+  @ApiPropertyOptional({ description: 'Rate limit time window in milliseconds', minimum: 1000 })
   @IsOptional()
-  @IsString()
-  permissions?: string;
+  @Type(() => Number)
+  @IsInt()
+  @Min(1000)
+  rateLimitTimeWindow?: number;
 }
 
 export class AdminLogsQueryDto {

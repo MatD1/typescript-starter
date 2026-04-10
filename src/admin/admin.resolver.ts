@@ -29,6 +29,7 @@ import {
   GtfsStatus,
   GtfsIngestResult,
   SystemHealth,
+  SystemOverview,
   UpdateUserInput,
   UpdateApiKeyInput,
   UsageGranularity,
@@ -38,14 +39,14 @@ import {
 @UseGuards(AdminGuard)
 @Resolver()
 export class AdminResolver {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(private readonly adminService: AdminService) { }
 
   /** Extract the adminUser.userId set by AdminGuard from the GraphQL context. */
   private extractUserId(ctx: { req: Request }): string {
     return (
       (ctx.req as unknown as Record<string, unknown>)['adminUser'] as
-        | { userId: string }
-        | undefined
+      | { userId: string }
+      | undefined
     )?.userId ?? '';
   }
 
@@ -175,6 +176,11 @@ export class AdminResolver {
   @Query(() => SystemHealth, { name: 'adminHealth' })
   async adminHealth(): Promise<SystemHealth> {
     return this.adminService.getHealth();
+  }
+
+  @Query(() => SystemOverview, { name: 'adminSystemOverview' })
+  async adminSystemOverview(): Promise<SystemOverview> {
+    return this.adminService.getSystemOverview();
   }
 
   // ─── Mutations ────────────────────────────────────────────────────────────

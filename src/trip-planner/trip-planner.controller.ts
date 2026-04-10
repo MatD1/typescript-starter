@@ -6,17 +6,24 @@ import {
   ParseFloatPipe,
   ParseBoolPipe,
 } from '@nestjs/common';
-import { ApiOperation, ApiQuery, ApiSecurity, ApiTags } from '@nestjs/swagger';
+import { ApiOkResponse, ApiOperation, ApiQuery, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { TripPlannerService } from './trip-planner.service';
+import {
+  TripResultObject,
+  TripPlannerResponseObject,
+  StopObject,
+  DepartureObject,
+} from './dto/trip-planner.objects';
 
 @ApiTags('trip-planner')
 @ApiSecurity('X-API-Key')
 @Controller('trip-planner')
 export class TripPlannerController {
-  constructor(private readonly tripPlannerService: TripPlannerService) {}
+  constructor(private readonly tripPlannerService: TripPlannerService) { }
 
   @Get('trip')
   @ApiOperation({ summary: 'Plan a journey between two locations' })
+  @ApiOkResponse({ type: TripPlannerResponseObject })
   @ApiQuery({ name: 'originName', required: false })
   @ApiQuery({
     name: 'originId',
@@ -57,6 +64,7 @@ export class TripPlannerController {
     calcNumberOfTrips?: number,
     @Query('wheelchair', new ParseBoolPipe({ optional: true }))
     wheelchair?: boolean,
+    @Query('context') context?: string,
   ) {
     return this.tripPlannerService.planTrip({
       originName,
@@ -69,11 +77,13 @@ export class TripPlannerController {
       itdTime,
       calcNumberOfTrips,
       wheelchair: wheelchair ?? false,
+      context,
     });
   }
 
   @Get('stop-finder')
   @ApiOperation({ summary: 'Search for stops and stations by name' })
+  @ApiOkResponse({ type: [StopObject] })
   @ApiQuery({ name: 'query', required: true, description: 'Search term' })
   @ApiQuery({
     name: 'type',
@@ -90,6 +100,7 @@ export class TripPlannerController {
 
   @Get('departures')
   @ApiOperation({ summary: 'Get departure board for a stop' })
+  @ApiOkResponse({ type: [DepartureObject] })
   @ApiQuery({ name: 'stopId', required: false })
   @ApiQuery({ name: 'stopName', required: false })
   @ApiQuery({ name: 'type', required: false, description: 'stop, platform' })
@@ -112,6 +123,7 @@ export class TripPlannerController {
 
   @Get('nearby')
   @ApiOperation({ summary: 'Find stops near coordinates' })
+  @ApiOkResponse({ type: [StopObject] })
   @ApiQuery({ name: 'lat', required: true })
   @ApiQuery({ name: 'lon', required: true })
   @ApiQuery({

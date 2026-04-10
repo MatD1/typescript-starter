@@ -87,8 +87,14 @@ export class AdminApiKey {
   @Field()
   enabled!: boolean;
 
+  @Field()
+  rateLimitEnabled!: boolean;
+
   @Field({ nullable: true })
   rateLimitMax?: number;
+
+  @Field(() => Int, { nullable: true })
+  rateLimitTimeWindow?: number;
 
   @Field(() => Int)
   requestCount!: number;
@@ -286,12 +292,33 @@ export class SystemHealthCheck {
 }
 
 @ObjectType()
+export class ProcessMetrics {
+  @Field(() => Float)
+  memoryUsageMb!: number;
+
+  @Field(() => Float)
+  uptimeSeconds!: number;
+}
+
+@ObjectType()
 export class SystemHealth {
   @Field()
   healthy!: boolean;
 
   @Field(() => [SystemHealthCheck])
   checks!: SystemHealthCheck[];
+
+  @Field(() => ProcessMetrics)
+  process!: ProcessMetrics;
+}
+
+@ObjectType()
+export class SystemOverview {
+  @Field(() => SystemHealth)
+  health!: SystemHealth;
+
+  @Field(() => AdminOverviewStats)
+  stats!: AdminOverviewStats;
 }
 
 // ─── Input Types ──────────────────────────────────────────────────────────────
@@ -325,4 +352,14 @@ export class UpdateApiKeyInput {
   @IsOptional()
   @IsString()
   permissions?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsBoolean()
+  rateLimitEnabled?: boolean;
+
+  @Field(() => Int, { nullable: true })
+  @IsOptional()
+  @IsNumber()
+  rateLimitTimeWindow?: number;
 }

@@ -42,13 +42,16 @@ export class ApiKeyService {
     private readonly cache: CacheService,
     @Inject(forwardRef(() => AuthService))
     private readonly authService: AuthService,
-  ) {}
+  ) { }
 
   async createApiKey(
     userId: string,
     name?: string,
     permissions?: string,
     expiresAt?: Date,
+    rateLimitEnabled: boolean = true,
+    rateLimitTimeWindow: number = 60000,
+    rateLimitMax: number = 60,
   ): Promise<{ key: string; id: string; start: string }> {
     // We use better-auth's internal API to create the key.
     // This ensures consistency with their plugin logic (hashing, prefixing, etc.)
@@ -58,6 +61,9 @@ export class ApiKeyService {
         name: name ?? 'Default Key',
         permissions: permissions ? { api: [permissions] } : { api: ['user'] },
         expiresAt: expiresAt?.toISOString(),
+        rateLimitEnabled,
+        rateLimitTimeWindow,
+        rateLimitMax,
       },
     });
 
@@ -127,6 +133,76 @@ export class ApiKeyService {
     }));
   }
 
+  async listAllApiKeys(
+    limit: number = 50,
+    offset: number = 0,
+  ): Promise<ApiKeyRecord[]> {
+    const rows = await this.db
+      .select({
+        id: apiKey.id,
+        name: apiKey.name,
+        start: apiKey.start,
+        userId: apiKey.userId,
+        enabled: apiKey.enabled,
+        createdAt: apiKey.createdAt,
+        expiresAt: apiKey.expiresAt,
+        permissions: apiKey.permissions,
+      })
+      .from(apiKey)
+      .limit(limit)
+      .offset(offset);
+
+    return rows.map((r) => ({
+      ...r,
+      permissions: r.permissions ? JSON.parse(r.permissions)?.api?.[0] : 'user',
+    }));
+  }
+
+  async updateApiKeyRateLimit(
+    keyId: string,
+    enabled: boolean,
+    max: number,
+    timeWindow: number,
+  ): Promise<void> {
+    await this.db
+      .update(apiKey)
+      .set({
+        rateLimitEnabled: enabled,
+        rateLimitMax: max,
+        rateLimitTimeWindow: timeWindow,
+        updatedAt: new Date(),
+      })
+      .where(eq(apiKey.id, keyId));
+
+    // Get the key record to know the key details for cache invalidation
+    const rows = await this.db
+      .select({ key: apiKey.key })
+      .from(apiKey)
+      .where(eq(apiKey.id, keyId))
+      .limit(1);
+
+    if (rows.length) {
+      await this.cache.del(`apiKey:verify:${rows[0].key}`);
+    }
+  }
+
+  async revokeApiKeyAdmin(keyId: string): Promise<void> {
+    const rows = await this.db
+      .select()
+      .from(apiKey)
+      .where(eq(apiKey.id, keyId))
+      .limit(1);
+
+    if (!rows.length) throw new NotFoundException('API key not found');
+
+    await this.db
+      .update(apiKey)
+      .set({ enabled: false, updatedAt: new Date() })
+      .where(eq(apiKey.id, keyId));
+
+    await this.cache.del(`apiKey:verify:${rows[0].key}`);
+  }
+
   async revokeApiKey(keyId: string, userId: string): Promise<void> {
     const rows = await this.db
       .select()
@@ -139,8 +215,6 @@ export class ApiKeyService {
       throw new BadRequestException('API key does not belong to this user');
     }
 
-    // Use better-auth API if available, or direct DB update.
-    // Direct DB update is safe if we invalidate the cache.
     await this.db
       .update(apiKey)
       .set({ enabled: false, updatedAt: new Date() })
@@ -148,6 +222,8 @@ export class ApiKeyService {
 
     await this.cache.del(`apiKey:verify:${rows[0].key}`);
   }
+
+
 
   async getUserFromSession(
     sessionToken: string,

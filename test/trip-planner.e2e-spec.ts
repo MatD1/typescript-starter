@@ -85,7 +85,7 @@ describe('TripPlanner endpoints (e2e)', () => {
   let app: INestApplication;
 
   const mockTripPlannerService = {
-    planTrip: jest.fn().mockResolvedValue(mockTripPlan),
+    planTrip: jest.fn().mockResolvedValue({ trips: mockTripPlan.journeys, context: 'test_context_123' }),
     findStops: jest.fn().mockResolvedValue(mockStops),
     getDepartures: jest.fn().mockResolvedValue(mockDepartures),
     searchByCoord: jest.fn().mockResolvedValue(mockNearby),
@@ -141,7 +141,7 @@ describe('TripPlanner endpoints (e2e)', () => {
     const res = await request(app.getHttpServer())
       .get(
         '/api/v1/trip-planner/trip' +
-          '?originId=10101100&destId=10102100&itdDate=20240115&itdTime=0800',
+        '?originId=10101100&destId=10102100&itdDate=20240115&itdTime=0800',
       )
       .set('X-API-Key', TEST_KEY)
       .expect(200);

@@ -19,13 +19,16 @@ export async function runMigrations(
     const db = drizzle(pool);
     try {
       await migrate(db, {
-        migrationsFolder: path.join(__dirname, '../../../drizzle'),
+        migrationsFolder: process.env.LAMBDA_TASK_ROOT
+          ? path.join(process.env.LAMBDA_TASK_ROOT, 'drizzle')
+          : path.join(__dirname, '../../../drizzle'),
       });
+
       await pool.end();
       return;
     } catch (err) {
       lastError = err;
-      await pool.end().catch(() => {});
+      await pool.end().catch(() => { });
       if (attempt < maxRetries) {
         await new Promise((r) => setTimeout(r, retryDelayMs));
       }

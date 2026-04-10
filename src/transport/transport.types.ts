@@ -89,6 +89,7 @@ export interface TripPlannerParams {
   itdTime?: string;
   calcNumberOfTrips?: number;
   wheelchair?: boolean;
+  context?: string;
 }
 
 export interface StopFinderParams {

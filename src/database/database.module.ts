@@ -22,6 +22,12 @@ export type DrizzleDB = NodePgDatabase<AppSchema>;
       useFactory: (configService: ConfigService): DrizzleDB => {
         const pool = new Pool({
           connectionString: configService.get<string>('database.url'),
+          // Serverless optimizations:
+          // Keep the pool small and allow connections to expire quickly to avoid 
+          // saturating the DB during bursty serverless scale-outs.
+          max: 1,
+          idleTimeoutMillis: 1000,
+          connectionTimeoutMillis: 5000,
         });
         return drizzle(pool, { schema });
       },
@@ -29,4 +35,4 @@ export type DrizzleDB = NodePgDatabase<AppSchema>;
   ],
   exports: [DRIZZLE],
 })
-export class DatabaseModule {}
+export class DatabaseModule { }

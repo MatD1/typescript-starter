@@ -4,10 +4,13 @@ import { GtfsStaticModule } from '../gtfs-static/gtfs-static.module';
 import { RealtimeService } from './realtime.service';
 import { RealtimeController } from './realtime.controller';
 import { RealtimeResolver } from './realtime.resolver';
+import { pubSubProvider } from './pubsub.provider';
+import { RealtimePollerService } from './realtime-poller.service';
 
 @Module({
   imports: [TransportModule, GtfsStaticModule],
   controllers: [RealtimeController],
-  providers: [RealtimeService, RealtimeResolver],
+  providers: [RealtimeService, RealtimeResolver, pubSubProvider, RealtimePollerService],
+  exports: [pubSubProvider],
 })
-export class RealtimeModule {}
+export class RealtimeModule { }

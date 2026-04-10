@@ -383,6 +383,31 @@ export class GtfsStaticService {
   }
 
   /**
+   * Fetches specific route metadata efficiently for GraphQL DataLoaders.
+   */
+  async getRouteMetadataByTripIds(
+    tripIds: string[],
+  ): Promise<{ tripId: string; lineCode?: string; routeColour?: string }[]> {
+    if (!tripIds.length) return [];
+
+    const rows = await this.db
+      .select({
+        tripId: gtfsTrip.tripId,
+        lineCode: gtfsRoute.routeShortName,
+        routeColour: gtfsRoute.routeColor,
+      })
+      .from(gtfsTrip)
+      .leftJoin(gtfsRoute, eq(gtfsTrip.routeId, gtfsRoute.routeId))
+      .where(inArray(gtfsTrip.tripId, tripIds));
+
+    return rows.map((r) => ({
+      tripId: r.tripId,
+      lineCode: r.lineCode ?? undefined,
+      routeColour: r.routeColour ?? undefined,
+    }));
+  }
+
+  /**
    * Returns route IDs for NSW intercity lines (BMT, CCN, HUN, SCO, SHL).
    * Used to filter sydneytrains realtime data when mode=intercity is requested.
    */

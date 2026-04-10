@@ -18,7 +18,7 @@ export class AdminGuard implements CanActivate {
   constructor(
     private readonly apiKeyService: ApiKeyService,
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
-  ) {}
+  ) { }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = this.getRequest(context);
@@ -49,27 +49,18 @@ export class AdminGuard implements CanActivate {
     }
 
     const sessionInfo = await this.apiKeyService.getUserFromSession(token);
-    if (!sessionInfo) {
-      throw new ForbiddenException('Invalid or expired session token.');
-    }
-
-    // Check role === 'admin' in the user table
-    const rows = await this.db
-      .select({ id: user.id, role: user.role })
-      .from(user)
-      .where(eq(user.id, sessionInfo.userId))
-      .limit(1);
-
-    if (!rows.length || rows[0].role !== 'admin') {
+    if (!sessionInfo || sessionInfo.role !== 'admin') {
       throw new ForbiddenException(
-        'Admin privileges required. Your account does not have the admin role.',
+        sessionInfo
+          ? 'Admin privileges required. Your account does not have the admin role.'
+          : 'Invalid or expired session token.'
       );
     }
 
     // Set adminUser on the request for downstream use
     (req as unknown as Record<string, unknown>)['adminUser'] = {
       userId: sessionInfo.userId,
-      role: rows[0].role,
+      role: sessionInfo.role,
     };
 
     return true;

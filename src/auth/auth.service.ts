@@ -46,6 +46,12 @@ export class AuthService implements OnModuleInit {
               api: ['user'],
             },
           },
+          // Enable default rate limiting for robust security against abuse
+          rateLimit: {
+            enabled: true,
+            maxRequests: 100,
+            timeWindow: 60000, // 1 minute
+          },
         }),
       ],
 
@@ -70,6 +76,26 @@ export class AuthService implements OnModuleInit {
       emailAndPassword: {
         enabled: true,
       },
+      // Check if this is the very first user in the database if so make them the Admin
+      databaseHooks: {
+        user: {
+          create: {
+            before: async (user) => {
+              try {
+                const countOfUsers = await this.db.select({ id: authSchema.user.id }).from(authSchema.user).limit(1)
+                if (countOfUsers.length === 0) {
+                  user.role = 'admin'
+                }
+              } catch (error) {
+                console.error('First User database hook failed', error)
+              }
+              return {
+                data: user
+              }
+            }
+          }
+        }
+      }
     });
   }
 }

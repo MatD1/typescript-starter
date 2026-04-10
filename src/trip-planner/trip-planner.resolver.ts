@@ -1,15 +1,17 @@
-import { Args, Int, Query, Resolver } from '@nestjs/graphql';
+import { Args, Int, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
 import { TripPlannerService } from './trip-planner.service';
 import {
   TripResultObject,
   StopObject,
   DepartureObject,
+  LegObject,
 } from './dto/trip-planner.objects';
+import { RouteMetadataDataLoader } from '../gtfs-static/gtfs-route.dataloader';
 import { StopFinderTypeEnum } from '../transport/transport.types';
 
 @Resolver()
 export class TripPlannerResolver {
-  constructor(private readonly tripPlannerService: TripPlannerService) {}
+  constructor(private readonly tripPlannerService: TripPlannerService) { }
 
   @Query(() => [TripResultObject], {
     description: 'Plan a journey between two locations.',
@@ -97,5 +99,43 @@ export class TripPlannerResolver {
       radius_1: radius ?? 500,
       type_1: 'BUS_POINT',
     });
+  }
+}
+
+@Resolver(() => LegObject)
+export class LegResolver {
+  constructor(private readonly dataLoader: RouteMetadataDataLoader) { }
+
+  @ResolveField(() => String, { nullable: true })
+  async lineCode(@Parent() leg: LegObject) {
+    if (!leg.tripId) return null;
+    const meta = await this.dataLoader.loader.load(leg.tripId);
+    return meta?.lineCode ?? null;
+  }
+
+  @ResolveField(() => String, { nullable: true })
+  async routeColour(@Parent() leg: LegObject) {
+    if (!leg.tripId) return null;
+    const meta = await this.dataLoader.loader.load(leg.tripId);
+    return meta?.routeColour ?? null;
+  }
+}
+
+@Resolver(() => DepartureObject)
+export class DepartureResolver {
+  constructor(private readonly dataLoader: RouteMetadataDataLoader) { }
+
+  @ResolveField(() => String, { nullable: true })
+  async lineCode(@Parent() departure: DepartureObject) {
+    if (!departure.tripId) return null;
+    const meta = await this.dataLoader.loader.load(departure.tripId);
+    return meta?.lineCode ?? null;
+  }
+
+  @ResolveField(() => String, { nullable: true })
+  async routeColour(@Parent() departure: DepartureObject) {
+    if (!departure.tripId) return null;
+    const meta = await this.dataLoader.loader.load(departure.tripId);
+    return meta?.routeColour ?? null;
   }
 }

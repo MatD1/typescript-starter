@@ -27,6 +27,8 @@ import { CacheService } from '../cache/cache.service';
 interface SupabaseJwtPayload extends JWTPayload {
   email?: string;
   user_metadata?: { full_name?: string; name?: string; avatar_url?: string };
+  app_metadata?: { role?: string;[key: string]: unknown };
+  role?: string;
 }
 
 const ASYMMETRIC_ALGORITHMS = new Set(['ES256', 'RS256', 'EdDSA']);
@@ -75,8 +77,15 @@ export class SupabaseAuthService {
     const verifyOptions = this.getVerifyOptions();
 
     if (alg && ASYMMETRIC_ALGORITHMS.has(alg)) {
-      const { payload } = await jwtVerify(token, this.getJwks(), verifyOptions);
-      return payload as SupabaseJwtPayload;
+      try {
+        const { payload } = await jwtVerify(token, this.getJwks(), verifyOptions);
+        return payload as SupabaseJwtPayload;
+      } catch (err) {
+        // If it's a cold start, JWKS might take a split second to fetch.
+        // We log and rethrow for now, but ensure this isn't due to misconfiguration.
+        console.error('JWT Verification failed (potentially JWKS unreachable):', err);
+        throw new UnauthorizedException('Authentication service is warming up. Please try again in a moment.');
+      }
     }
 
     const jwtSecret = this.configService.get<string>('supabase.jwtSecret');
@@ -130,6 +139,11 @@ export class SupabaseAuthService {
       );
     }
 
+    const jwtRole =
+      payload.app_metadata?.role ??
+      (payload.role !== 'authenticated' && payload.role !== 'anon' ? payload.role : undefined) ??
+      'user';
+
     try {
       await this.db
         .insert(userTable)
@@ -137,12 +151,16 @@ export class SupabaseAuthService {
           id: randomUUID(),
           name,
           email,
+          role: jwtRole,
           emailVerified: true,
           image: payload.user_metadata?.avatar_url ?? null,
           createdAt: new Date(),
           updatedAt: new Date(),
         })
-        .onConflictDoNothing({ target: userTable.email });
+        .onConflictDoUpdate({
+          target: userTable.email,
+          set: { role: jwtRole, updatedAt: new Date() },
+        });
 
       const [resolvedUser] = await this.db
         .select()

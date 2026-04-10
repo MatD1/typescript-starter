@@ -17,6 +17,12 @@ import {
 import { GtfsStaticService } from './gtfs-static.service';
 import { TRANSPORT_MODES, TransportModeEnum } from '../transport/transport.types';
 import { AdminGuard } from '../auth/guards/admin.guard';
+import {
+  PaginatedRoutesObject,
+  PaginatedStopsObject,
+  PaginatedTripsObject,
+  PaginatedStopTimesObject,
+} from './dto/gtfs-static.objects';
 
 @ApiTags('gtfs-static')
 @ApiSecurity('X-API-Key')
@@ -67,15 +73,7 @@ export class GtfsStaticController {
   })
   @ApiOkResponse({
     description: 'Paginated list of routes',
-    schema: {
-      properties: {
-        data: { type: 'array', items: { type: 'object' } },
-        total: { type: 'number' },
-        limit: { type: 'number' },
-        offset: { type: 'number' },
-        hasNextPage: { type: 'boolean' },
-      },
-    },
+    type: PaginatedRoutesObject,
   })
   getRoutes(
     @Query('mode', new ParseEnumPipe(TransportModeEnum, { optional: true }))
@@ -119,15 +117,7 @@ export class GtfsStaticController {
   })
   @ApiOkResponse({
     description: 'Paginated list of stops',
-    schema: {
-      properties: {
-        data: { type: 'array', items: { type: 'object' } },
-        total: { type: 'number' },
-        limit: { type: 'number' },
-        offset: { type: 'number' },
-        hasNextPage: { type: 'boolean' },
-      },
-    },
+    type: PaginatedStopsObject,
   })
   getStops(
     @Query('mode', new ParseEnumPipe(TransportModeEnum, { optional: true }))
@@ -170,15 +160,7 @@ export class GtfsStaticController {
   })
   @ApiOkResponse({
     description: 'Paginated list of trips',
-    schema: {
-      properties: {
-        data: { type: 'array', items: { type: 'object' } },
-        total: { type: 'number' },
-        limit: { type: 'number' },
-        offset: { type: 'number' },
-        hasNextPage: { type: 'boolean' },
-      },
-    },
+    type: PaginatedTripsObject,
   })
   getTrips(
     @Query('routeId') routeId?: string,
@@ -218,15 +200,7 @@ export class GtfsStaticController {
   })
   @ApiOkResponse({
     description: 'Paginated list of stop times',
-    schema: {
-      properties: {
-        data: { type: 'array', items: { type: 'object' } },
-        total: { type: 'number' },
-        limit: { type: 'number' },
-        offset: { type: 'number' },
-        hasNextPage: { type: 'boolean' },
-      },
-    },
+    type: PaginatedStopTimesObject,
   })
   getStopTimes(
     @Query('tripId') tripId?: string,

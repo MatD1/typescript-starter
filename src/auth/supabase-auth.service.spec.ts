@@ -19,17 +19,17 @@ const TEST_EMAIL = 'existing@example.com';
 describe('SupabaseAuthService', () => {
   let service: SupabaseAuthService;
   let mockDb: jest.Mocked<DrizzleDB>;
-  let onConflictDoNothingMock: jest.Mock;
+  let onConflictDoUpdateMock: jest.Mock;
 
   beforeEach(async () => {
-    onConflictDoNothingMock = jest.fn().mockResolvedValue(undefined);
+    onConflictDoUpdateMock = jest.fn().mockResolvedValue(undefined);
     const thenable = {
       then: (resolve: (v?: unknown) => void) => resolve(undefined),
       catch: () => thenable,
     };
     const insertChain = {
       values: jest.fn().mockReturnValue({
-        onConflictDoNothing: onConflictDoNothingMock,
+        onConflictDoUpdate: onConflictDoUpdateMock,
         ...thenable,
       }),
     };
@@ -98,13 +98,13 @@ describe('SupabaseAuthService', () => {
 
       const insertCall = mockDb.insert as jest.Mock;
       expect(insertCall).toHaveBeenCalled();
-      expect(onConflictDoNothingMock).toHaveBeenCalled();
+      expect(onConflictDoUpdateMock).toHaveBeenCalled();
     });
 
-    it('calls insert with onConflictDoNothing to handle existing users safely', async () => {
+    it('calls insert with onConflictDoUpdate to handle existing users safely and sync roles', async () => {
       await service.exchangeSupabaseToken('valid-supabase-jwt');
 
-      expect(onConflictDoNothingMock).toHaveBeenCalledWith(
+      expect(onConflictDoUpdateMock).toHaveBeenCalledWith(
         expect.objectContaining({ target: expect.anything() }),
       );
     });
