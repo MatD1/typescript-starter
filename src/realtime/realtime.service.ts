@@ -10,6 +10,11 @@ import { CacheTTL } from '../cache/cache.constants';
 import { TRANSPORT_MODES } from '../transport/transport.types';
 import type { TransportMode } from '../transport/transport.types';
 import type { TrackedTripObject } from './dto/tracked-trip.object';
+import {
+  RouteHeadwayObject,
+  HeadwayStatus,
+  VehicleHeadwayObject,
+} from './dto/headway.object';
 
 type WithMode<T> = T & { mode: string };
 type WithRouteMetadata<T> = T & { lineCode?: string; routeColour?: string };
@@ -30,7 +35,115 @@ export class RealtimeService {
     private readonly gtfsRt: GtfsRealtimeService,
     private readonly cache: CacheService,
     private readonly gtfsStaticService: GtfsStaticService,
-  ) {}
+  ) { }
+
+  async getHeadwayGroups(
+    mode?: TransportMode,
+  ): Promise<RouteHeadwayObject[]> {
+    const vehicles = await this.getVehiclePositions(mode);
+
+    // 1. Group by routeId + directionId
+    const groups = new Map<string, typeof vehicles>();
+    for (const v of vehicles) {
+      if (!v.routeId) continue;
+      const key = `${v.routeId}:${v.directionId ?? 0}`;
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+      groups.get(key)!.push(v);
+    }
+
+    const result: RouteHeadwayObject[] = [];
+
+    // 2. Process each group
+    for (const [key, groupVehicles] of groups.entries()) {
+      const [routeId, directionIdStr] = key.split(':');
+      const directionId = parseInt(directionIdStr, 10);
+
+      // Sort by timestamp ascending (oldest first = furthest ahead on route)
+      groupVehicles.sort((a, b) => {
+        if (a.timestamp !== undefined && b.timestamp !== undefined) {
+          return a.timestamp - b.timestamp;
+        }
+        return 0;
+      });
+
+      const vehicleHeadways: VehicleHeadwayObject[] = [];
+
+      // First vehicle in group has no predecessor
+      vehicleHeadways.push({
+        vehicleId: groupVehicles[0].vehicleId,
+        status: HeadwayStatus.UNKNOWN,
+      });
+
+      // Compute gaps for subsequent vehicles
+      for (let i = 1; i < groupVehicles.length; i++) {
+        const leading = groupVehicles[i - 1];
+        const trailing = groupVehicles[i];
+        const gap = this.computeHeadwaySeconds(leading, trailing);
+        const status = this.classifyHeadway(gap);
+
+        vehicleHeadways.push({
+          vehicleId: trailing.vehicleId,
+          gapSeconds: gap,
+          status,
+        });
+      }
+
+      result.push({
+        routeId,
+        directionId,
+        vehicles: vehicleHeadways,
+      });
+    }
+
+    return result;
+  }
+
+  private computeHeadwaySeconds(
+    leading: VehiclePosition,
+    trailing: VehiclePosition,
+  ): number | undefined {
+    // Prefer timestamp difference
+    if (leading.timestamp !== undefined && trailing.timestamp !== undefined) {
+      return Math.abs(trailing.timestamp - leading.timestamp);
+    }
+
+    // Fallback: geographic distance @ 40 km/h
+    const distKm = this.haversineKm(
+      leading.latitude,
+      leading.longitude,
+      trailing.latitude,
+      trailing.longitude,
+    );
+    return Math.round((distKm / 40.0) * 3600);
+  }
+
+  private haversineKm(
+    lat1: number,
+    lon1: number,
+    lat2: number,
+    lon2: number,
+  ): number {
+    const r = 6371.0;
+    const dLat = (lat2 - lat1) * (Math.PI / 180);
+    const dLon = (lon2 - lon1) * (Math.PI / 180);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+    return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  private classifyHeadway(seconds?: number): HeadwayStatus {
+    if (seconds === undefined) return HeadwayStatus.UNKNOWN;
+    if (seconds < 180) return HeadwayStatus.BUNCHED;
+    if (seconds < 420) return HeadwayStatus.COMPRESSING;
+    if (seconds < 900) return HeadwayStatus.HEALTHY;
+    return HeadwayStatus.GAPPED;
+  }
 
   async getVehiclePositions(
     mode?: TransportMode,
@@ -184,17 +297,17 @@ export class RealtimeService {
         m === 'intercity'
           ? this.getIntercityVehiclePositions()
           : this.cache.getOrSet(
-              `realtime:vehicles:${m}`,
-              () => this.gtfsRt.getVehiclePositions(m),
-              CacheTTL.VEHICLE_POSITIONS,
-            ),
+            `realtime:vehicles:${m}`,
+            () => this.gtfsRt.getVehiclePositions(m),
+            CacheTTL.VEHICLE_POSITIONS,
+          ),
         m === 'intercity'
           ? this.getIntercityTripUpdates()
           : this.cache.getOrSet(
-              `realtime:tripupdates:${m}`,
-              () => this.gtfsRt.getTripUpdates(m),
-              CacheTTL.TRIP_UPDATES,
-            ),
+            `realtime:tripupdates:${m}`,
+            () => this.gtfsRt.getTripUpdates(m),
+            CacheTTL.TRIP_UPDATES,
+          ),
       ]);
 
       const vehicleList =
@@ -227,18 +340,18 @@ export class RealtimeService {
         // Live position — present only when vehiclepos feed has this trip
         position: vehicle
           ? {
-              latitude: vehicle.latitude,
-              longitude: vehicle.longitude,
-              bearing: vehicle.bearing,
-              speed: vehicle.speed,
-              currentStatus: vehicle.currentStatus,
-              currentStopId: vehicle.currentStopId,
-              currentStopSequence: vehicle.currentStopSequence,
-              occupancyStatus: vehicle.occupancyStatus,
-              trackDirection: vehicle.trackDirection,
-              timestamp: vehicle.timestamp,
-              consist: vehicle.consist,
-            }
+            latitude: vehicle.latitude,
+            longitude: vehicle.longitude,
+            bearing: vehicle.bearing,
+            speed: vehicle.speed,
+            currentStatus: vehicle.currentStatus,
+            currentStopId: vehicle.currentStopId,
+            currentStopSequence: vehicle.currentStopSequence,
+            occupancyStatus: vehicle.occupancyStatus,
+            trackDirection: vehicle.trackDirection,
+            timestamp: vehicle.timestamp,
+            consist: vehicle.consist,
+          }
           : undefined,
 
         stopTimeUpdates: tripUpdate?.stopTimeUpdates?.map((s) => ({

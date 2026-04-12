@@ -6,11 +6,18 @@ import { RealtimeController } from './realtime.controller';
 import { RealtimeResolver } from './realtime.resolver';
 import { pubSubProvider } from './pubsub.provider';
 import { RealtimePollerService } from './realtime-poller.service';
+import { VehicleStreamService } from './vehicle-stream.service';
 
 @Module({
   imports: [TransportModule, GtfsStaticModule],
   controllers: [RealtimeController],
-  providers: [RealtimeService, RealtimeResolver, pubSubProvider, RealtimePollerService],
+  providers: [
+    RealtimeService,
+    RealtimeResolver,
+    pubSubProvider,
+    RealtimePollerService,
+    VehicleStreamService,
+  ],
   exports: [pubSubProvider],
 })
 export class RealtimeModule { }

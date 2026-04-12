@@ -436,3 +436,6 @@ out.json
 infra/.terraform.lock.hcl
 
 /infra
+docs/headway_implementation_plan.md
+.gitignore
+docs/sse_implementation_plan.md
