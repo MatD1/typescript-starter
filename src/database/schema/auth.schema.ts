@@ -16,6 +16,8 @@ export const user = pgTable('users', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
   role: text('role').notNull().default('user'),
   banned: boolean('banned').notNull().default(false),
+  banReason: text('ban_reason'),
+  banExpires: timestamp('ban_expires'),
 });
 
 export const session = pgTable('session', {
@@ -29,6 +31,7 @@ export const session = pgTable('session', {
   refreshTokenExpiresAt: timestamp('refresh_token_expires_at'),
   ipAddress: text('ip_address'),
   userAgent: text('user_agent'),
+  impersonatedBy: text('impersonated_by'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });

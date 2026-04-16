@@ -7,12 +7,26 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiOkResponse,
+  ApiOperation,
+  ApiProperty,
+  ApiTags,
+  ApiUnauthorizedResponse,
+  ApiBadRequestResponse,
+} from '@nestjs/swagger';
 import { SupabaseAuthService } from './supabase-auth.service';
 import { Public } from '../common/decorators/public.decorator';
 import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
+import { SessionTokenResponseSwagger } from './dto/auth.swagger-schemas';
 
 class SupabaseExchangeDto {
+  @ApiProperty({
+    description:
+      'A valid Supabase access token (JWT). Obtain this from the Supabase SDK after the user signs in.',
+    example: 'eyJhbGciOiJIUzI1NiIs...',
+  })
   @IsString()
   @IsNotEmpty()
   @MaxLength(2000, { message: 'Token exceeds maximum length' })
@@ -23,15 +37,24 @@ class SupabaseExchangeDto {
 @ApiTags('auth')
 @Controller('auth/supabase')
 export class SupabaseAuthController {
-  constructor(private readonly supabaseAuthService: SupabaseAuthService) {}
+  constructor(private readonly supabaseAuthService: SupabaseAuthService) { }
 
   @Post('exchange')
-  @Throttle({ default: { limit: 10, ttl: 900_000 } }) // 10 req per 15 min
+  @Throttle({ default: { limit: 10, ttl: 900_000 } })
   @ApiOperation({
-    summary: 'Exchange a Supabase JWT for session tokens',
+    summary: 'Exchange a Supabase JWT for API session tokens',
     description:
-      'Verifies the Supabase JWT, upserts the user in our database, and returns sessionToken, refreshToken, and expiresAt. Use sessionToken for API calls; use refreshToken with POST /auth/refresh to obtain new tokens before expiry.',
+      'Verifies the Supabase JWT, upserts the corresponding user record in the local database, ' +
+      'and returns a `sessionToken` + `refreshToken` pair that can be used with all authenticated API endpoints. ' +
+      '**Flow**: `Supabase sign-in → POST /auth/supabase/exchange → receive sessionToken → use Bearer token for API calls`',
   })
+  @ApiBody({ type: SupabaseExchangeDto })
+  @ApiOkResponse({
+    type: SessionTokenResponseSwagger,
+    description: 'Session token pair for the authenticated user',
+  })
+  @ApiUnauthorizedResponse({ description: 'Invalid or expired Supabase token' })
+  @ApiBadRequestResponse({ description: 'Missing or malformed token field' })
   async exchange(@Body() dto: SupabaseExchangeDto) {
     if (!dto.token) throw new BadRequestException('token is required');
     try {

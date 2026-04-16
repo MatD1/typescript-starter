@@ -47,6 +47,18 @@ export class UpdateUserDto {
   @IsOptional()
   @IsBoolean()
   banned?: boolean;
+
+  @ApiPropertyOptional({ description: 'Reason for banning the user' })
+  @IsOptional()
+  @IsString()
+  banReason?: string;
+
+  @ApiPropertyOptional({ description: 'Ban duration in seconds' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  banExpiresIn?: number;
 }
 
 export class AdminApiKeysQueryDto {

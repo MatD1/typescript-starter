@@ -26,6 +26,7 @@ import {
 } from '../database/schema/gtfs.schema';
 import { CacheService } from '../cache/cache.service';
 import { ApiKeyService } from '../auth/api-key.service';
+import { AuthService } from '../auth/auth.service';
 import { GtfsStaticService } from '../gtfs-static/gtfs-static.service';
 import type {
   AdminUsersQueryDto,
@@ -65,6 +66,7 @@ export class AdminService {
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly cache: CacheService,
     private readonly apiKeyService: ApiKeyService,
+    private readonly authService: AuthService,
     private readonly gtfsStaticService: GtfsStaticService,
     private readonly httpService: HttpService,
   ) { }
@@ -84,38 +86,30 @@ export class AdminService {
 
   // ─── Users ─────────────────────────────────────────────────────────────────
 
-  async getUsers(query: AdminUsersQueryDto): Promise<PaginatedUsers> {
+  async getUsers(query: AdminUsersQueryDto, headers: Headers): Promise<PaginatedUsers> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
-    const offset = (page - 1) * limit;
 
-    const conditions: ReturnType<typeof eq>[] = [];
-    if (query.role) conditions.push(eq(user.role, query.role));
-    if (query.search) {
-      conditions.push(
-        sql`(${ilike(user.name, `%${query.search}%`)} OR ${ilike(user.email, `%${query.search}%`)})` as ReturnType<typeof eq>,
-      );
-    }
-
-    const where = conditions.length ? and(...conditions) : undefined;
-
-    const [rows, totalRows] = await Promise.all([
-      this.db
-        .select()
-        .from(user)
-        .where(where)
-        .orderBy(desc(user.createdAt))
-        .limit(limit)
-        .offset(offset),
-      this.db
-        .select({ value: count() })
-        .from(user)
-        .where(where),
-    ]);
+    const { users, total } = await this.authService.auth.api.listUsers({
+      query: {
+        limit,
+        offset: (page - 1) * limit,
+        searchField: 'email', // You can expand this if needed
+        searchOperator: 'contains',
+        searchValue: query.search,
+      },
+      headers,
+    });
 
     return {
-      data: rows.map((r) => this.mapUser(r)),
-      total: totalRows[0]?.value ?? 0,
+      data: users.map((u) => ({
+        ...u,
+        role: u.role || 'user',
+        banned: !!u.banned,
+        banReason: u.banReason || undefined,
+        banExpires: u.banExpires || undefined,
+      })),
+      total,
       page,
       limit,
     };
@@ -154,37 +148,63 @@ export class AdminService {
     };
   }
 
-  async updateUser(id: string, dto: UpdateUserDto): Promise<AdminUser> {
-    const rows = await this.db
-      .select()
-      .from(user)
-      .where(eq(user.id, id))
-      .limit(1);
-    if (!rows.length) throw new NotFoundException(`User ${id} not found`);
+  async updateUser(id: string, dto: UpdateUserDto, headers: Headers): Promise<AdminUser> {
+    // BetterAuth admin API handles role management and banning specifically
+    if (dto.role !== undefined) {
+      await this.authService.auth.api.setRole({
+        body: {
+          userId: id,
+          role: dto.role,
+        },
+        headers,
+      });
+    }
 
-    const updates: Partial<typeof user.$inferInsert> = {
-      updatedAt: new Date(),
-    };
-    if (dto.role !== undefined) updates.role = dto.role;
-    if (dto.banned !== undefined) updates.banned = dto.banned;
+    if (dto.banned === true) {
+      await this.authService.auth.api.banUser({
+        body: {
+          userId: id,
+          reason: dto.banReason,
+          expiresIn: dto.banExpiresIn,
+        },
+        headers,
+      });
+    } else if (dto.banned === false) {
+      await this.authService.auth.api.unbanUser({
+        body: {
+          userId: id,
+        },
+        headers,
+      });
+    }
 
-    const updated = await this.db
-      .update(user)
-      .set(updates)
-      .where(eq(user.id, id))
-      .returning();
-
-    return this.mapUser(updated[0]);
+    const updatedUser = await this.getUser(id);
+    return updatedUser;
   }
 
-  async deleteUser(id: string): Promise<void> {
-    const rows = await this.db
-      .select()
-      .from(user)
-      .where(eq(user.id, id))
-      .limit(1);
-    if (!rows.length) throw new NotFoundException(`User ${id} not found`);
-    await this.db.delete(user).where(eq(user.id, id));
+  async deleteUser(id: string, headers: Headers): Promise<void> {
+    await this.authService.auth.api.removeUser({
+      body: {
+        userId: id,
+      },
+      headers,
+    });
+  }
+
+  // ─── Impersonation ─────────────────────────────────────────────────────────
+
+  async impersonateUser(adminUserId: string, targetUserId: string, headers: Headers) {
+    this.logger.log(`Admin ${adminUserId} starting impersonation of ${targetUserId}`);
+    return this.authService.auth.api.impersonateUser({
+      body: {
+        userId: targetUserId,
+      },
+      headers,
+    });
+  }
+
+  async stopImpersonating(headers: Headers) {
+    return this.authService.auth.api.stopImpersonating({ headers });
   }
 
   // ─── API Keys ──────────────────────────────────────────────────────────────

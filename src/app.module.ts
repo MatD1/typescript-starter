@@ -68,9 +68,14 @@ const MAX_QUERY_DEPTH = 8;
       subscriptions: {
         'graphql-ws': true,
       },
-      introspection: String(process.env.ALLOW_INTROSPECTION) === 'true',
+      introspection:
+        process.env.NODE_ENV === 'development' ||
+        String(process.env.ALLOW_INTROSPECTION) === 'true',
       formatError: (formattedError: GraphQLFormattedError, error: unknown) => {
-        if (String(process.env.ALLOW_INTROSPECTION) !== 'true') {
+        if (
+          process.env.NODE_ENV !== 'development' &&
+          String(process.env.ALLOW_INTROSPECTION) !== 'true'
+        ) {
           return {
             message: formattedError.message,
             extensions: {
@@ -121,6 +126,19 @@ const MAX_QUERY_DEPTH = 8;
       ],
       validationRules: [
         (context) => {
+          // Exempt introspection queries from depth limits
+          const isIntrospection = context.getDocument().definitions.some(
+            (def) =>
+              def.kind === 'OperationDefinition' &&
+              def.selectionSet.selections.some(
+                (sel) =>
+                  sel.kind === 'Field' &&
+                  (sel.name.value === '__schema' || sel.name.value === '__type'),
+              ),
+          );
+
+          if (isIntrospection) return {};
+
           let depth = 0;
           return {
             Field: {

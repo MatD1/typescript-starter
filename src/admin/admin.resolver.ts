@@ -12,6 +12,9 @@ import { GqlExecutionContext } from '@nestjs/graphql';
 import type { Request } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 import { AdminGuard } from '../auth/guards/admin.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { Role } from '../auth/enums/role.enum';
 import { AdminService } from './admin.service';
 import {
   AdminUser,
@@ -36,15 +39,16 @@ import {
 } from './dto/admin.types';
 
 @Public()
-@UseGuards(AdminGuard)
+@UseGuards(AdminGuard, RolesGuard)
+@Roles(Role.ADMIN)
 @Resolver()
 export class AdminResolver {
   constructor(private readonly adminService: AdminService) { }
 
-  /** Extract the adminUser.userId set by AdminGuard from the GraphQL context. */
+  /** Extract the user.userId set by AdminGuard from the GraphQL context. */
   private extractUserId(ctx: { req: Request }): string {
     return (
-      (ctx.req as unknown as Record<string, unknown>)['adminUser'] as
+      (ctx.req as unknown as Record<string, unknown>)['user'] as
       | { userId: string }
       | undefined
     )?.userId ?? '';
@@ -59,12 +63,13 @@ export class AdminResolver {
 
   @Query(() => PaginatedUsers, { name: 'adminUsers' })
   async adminUsers(
+    @Context() ctx: { req: Request },
     @Args('page', { type: () => Int, nullable: true }) page?: number,
     @Args('limit', { type: () => Int, nullable: true }) limit?: number,
     @Args('search', { nullable: true }) search?: string,
     @Args('role', { nullable: true }) role?: string,
   ): Promise<PaginatedUsers> {
-    return this.adminService.getUsers({ page, limit, search, role });
+    return this.adminService.getUsers({ page, limit, search, role }, ctx.req.headers as unknown as Headers);
   }
 
   @Query(() => AdminUserDetail, { name: 'adminUser' })
@@ -187,17 +192,34 @@ export class AdminResolver {
 
   @Mutation(() => AdminUser, { name: 'adminUpdateUser' })
   async adminUpdateUser(
+    @Context() ctx: { req: Request },
     @Args('id', { type: () => ID }) id: string,
     @Args('input') input: UpdateUserInput,
   ): Promise<AdminUser> {
-    return this.adminService.updateUser(id, input);
+    return this.adminService.updateUser(id, input, ctx.req.headers as unknown as Headers);
   }
 
   @Mutation(() => Boolean, { name: 'adminDeleteUser' })
   async adminDeleteUser(
+    @Context() ctx: { req: Request },
     @Args('id', { type: () => ID }) id: string,
   ): Promise<boolean> {
-    await this.adminService.deleteUser(id);
+    await this.adminService.deleteUser(id, ctx.req.headers as unknown as Headers);
+    return true;
+  }
+
+  @Mutation(() => ID, { name: 'adminImpersonateUser', nullable: true })
+  async adminImpersonateUser(
+    @Args('id', { type: () => ID }) id: string,
+    @Context() ctx: { req: Request },
+  ): Promise<string> {
+    const res = await this.adminService.impersonateUser(this.extractUserId(ctx), id, ctx.req.headers as unknown as Headers);
+    return res.session.token;
+  }
+
+  @Mutation(() => Boolean, { name: 'adminStopImpersonating' })
+  async adminStopImpersonating(@Context() ctx: { req: Request }): Promise<boolean> {
+    await this.adminService.stopImpersonating(ctx.req.headers as unknown as Headers);
     return true;
   }
 

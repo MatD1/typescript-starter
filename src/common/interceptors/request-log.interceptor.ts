@@ -29,7 +29,7 @@ function shouldSkip(path: string): boolean {
 export class RequestLogInterceptor implements NestInterceptor {
   private readonly logger = new Logger('HTTP');
 
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) { }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const start = Date.now();
@@ -54,7 +54,7 @@ export class RequestLogInterceptor implements NestInterceptor {
       userId = req
         ? (req as unknown as Record<string, unknown>)['user']
           ? ((req as unknown as Record<string, unknown>)['user'] as { userId?: string })
-              .userId
+            .userId
           : undefined
         : undefined;
       keyId = req
@@ -71,7 +71,7 @@ export class RequestLogInterceptor implements NestInterceptor {
       label = `[REST] ${method} ${path}`;
       userId = (req as unknown as Record<string, unknown>)['user']
         ? ((req as unknown as Record<string, unknown>)['user'] as { userId?: string })
-            .userId
+          .userId
         : undefined;
       keyId = (req as unknown as Record<string, unknown>)['user']
         ? ((req as unknown as Record<string, unknown>)['user'] as { keyId?: string }).keyId
@@ -95,9 +95,9 @@ export class RequestLogInterceptor implements NestInterceptor {
             statusCode: isGraphql
               ? 200
               : context
-                  .switchToHttp()
-                  .getResponse<Response>()
-                  .statusCode,
+                .switchToHttp()
+                .getResponse<Response>()
+                .statusCode,
             userId: userId ?? null,
             keyId: keyId ?? null,
             responseTimeMs,
@@ -108,10 +108,31 @@ export class RequestLogInterceptor implements NestInterceptor {
         },
         error: (err: unknown) => {
           const responseTimeMs = Date.now() - start;
-          const statusCode =
-            err instanceof Object && 'status' in err
-              ? (err as { status: number }).status
-              : 500;
+
+          let rawStatus: unknown = 500;
+          if (err instanceof Object) {
+            if ('status' in err) rawStatus = (err as any).status;
+            else if ('statusCode' in err) rawStatus = (err as any).statusCode;
+          }
+
+          let statusCode = 500;
+          if (typeof rawStatus === 'number') {
+            statusCode = rawStatus;
+          } else if (typeof rawStatus === 'string') {
+            const parsed = parseInt(rawStatus, 10);
+            if (!isNaN(parsed)) {
+              statusCode = parsed;
+            } else if (rawStatus.toUpperCase() === 'UNAUTHORIZED') {
+              statusCode = 401;
+            } else if (rawStatus.toUpperCase() === 'FORBIDDEN') {
+              statusCode = 403;
+            } else if (rawStatus.toUpperCase() === 'NOT_FOUND') {
+              statusCode = 404;
+            } else if (rawStatus.toUpperCase() === 'BAD_REQUEST') {
+              statusCode = 400;
+            }
+          }
+
           const errorMsg =
             err instanceof Error ? err.message : 'Unknown error';
           this.logger.error(`${label} — ${responseTimeMs}ms — ERROR: ${errorMsg}`);

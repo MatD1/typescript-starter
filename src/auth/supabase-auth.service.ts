@@ -2,6 +2,7 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -11,7 +12,7 @@ import {
   decodeProtectedHeader,
   type JWTPayload,
 } from 'jose';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 const REFRESH_USED_PREFIX = 'refresh:used:';
 import { AuthService } from './auth.service';
@@ -35,6 +36,7 @@ const ASYMMETRIC_ALGORITHMS = new Set(['ES256', 'RS256', 'EdDSA']);
 
 @Injectable()
 export class SupabaseAuthService {
+  private readonly logger = new Logger(SupabaseAuthService.name);
   private jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
 
   constructor(
@@ -82,8 +84,7 @@ export class SupabaseAuthService {
         return payload as SupabaseJwtPayload;
       } catch (err) {
         // If it's a cold start, JWKS might take a split second to fetch.
-        // We log and rethrow for now, but ensure this isn't due to misconfiguration.
-        console.error('JWT Verification failed (potentially JWKS unreachable):', err);
+        this.logger.error('JWT verification failed (JWKS may be unreachable on cold start)', err instanceof Error ? err.stack : String(err));
         throw new UnauthorizedException('Authentication service is warming up. Please try again in a moment.');
       }
     }
@@ -145,6 +146,14 @@ export class SupabaseAuthService {
       'user';
 
     try {
+      // Special Sync Logic: We only overwrite the local DB role if the Supabase JWT 
+      // carries a high-privilege 'admin' role. This prevents manual Postgres 
+      // admin assignments from being reverted back to 'user' by a stale JWT.
+      const syncRoleSql = sql`CASE 
+        WHEN ${userTable.role} = 'admin' THEN 'admin'
+        ELSE ${jwtRole}
+      END`;
+
       await this.db
         .insert(userTable)
         .values({
@@ -159,7 +168,10 @@ export class SupabaseAuthService {
         })
         .onConflictDoUpdate({
           target: userTable.email,
-          set: { role: jwtRole, updatedAt: new Date() },
+          set: {
+            role: syncRoleSql,
+            updatedAt: new Date(),
+          },
         });
 
       const [resolvedUser] = await this.db
@@ -192,8 +204,15 @@ export class SupabaseAuthService {
         updatedAt: new Date(),
       });
 
+      this.logger.log(
+        `Token exchange successful — userId=${resolvedUserId} email=${email} role=${resolvedUser.role}`,
+      );
       return { sessionToken, refreshToken, expiresAt, userId: resolvedUserId, role: resolvedUser.role };
     } catch (err) {
+      this.logger.error(
+        `Database error during token exchange for email=${email ?? 'unknown'}`,
+        err instanceof Error ? err.stack : String(err),
+      );
       throw new InternalServerErrorException(
         'Database error during token exchange',
       );
@@ -217,6 +236,9 @@ export class SupabaseAuthService {
         `${REFRESH_USED_PREFIX}${refreshToken}`,
       );
       if (reusedUserId) {
+        this.logger.warn(
+          `[SECURITY] Refresh token reuse detected — all sessions revoked for userId=${reusedUserId}`,
+        );
         await this.db
           .delete(sessionTable)
           .where(eq(sessionTable.userId, reusedUserId));
@@ -224,6 +246,7 @@ export class SupabaseAuthService {
           'Refresh token reuse detected. All sessions have been revoked.',
         );
       }
+      this.logger.warn('Refresh token not found — token may be expired or invalid');
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
@@ -277,6 +300,9 @@ export class SupabaseAuthService {
       .where(eq(userTable.id, oldSession.userId))
       .limit(1);
 
+    this.logger.log(
+      `Token refresh successful — userId=${oldSession.userId} role=${refreshedUser?.role ?? 'user'}`,
+    );
     return {
       sessionToken: newSessionToken,
       refreshToken: newRefreshToken,

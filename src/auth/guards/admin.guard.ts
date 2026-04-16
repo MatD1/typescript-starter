@@ -57,8 +57,8 @@ export class AdminGuard implements CanActivate {
       );
     }
 
-    // Set adminUser on the request for downstream use
-    (req as unknown as Record<string, unknown>)['adminUser'] = {
+    // Set user on the request for downstream use (unifying with ApiKeyGuard)
+    (req as unknown as Record<string, unknown>)['user'] = {
       userId: sessionInfo.userId,
       role: sessionInfo.role,
     };

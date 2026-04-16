@@ -28,6 +28,12 @@ export class AdminUser {
   @Field()
   banned!: boolean;
 
+  @Field({ nullable: true })
+  banReason?: string;
+
+  @Field({ nullable: true })
+  banExpires?: Date;
+
   @Field()
   createdAt!: Date;
 
@@ -334,6 +340,16 @@ export class UpdateUserInput {
   @IsOptional()
   @IsBoolean()
   banned?: boolean;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsString()
+  banReason?: string;
+
+  @Field({ nullable: true })
+  @IsOptional()
+  @IsNumber()
+  banExpiresIn?: number;
 }
 
 @InputType()

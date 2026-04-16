@@ -17,6 +17,9 @@ import {
 import { GtfsStaticService } from './gtfs-static.service';
 import { TRANSPORT_MODES, TransportModeEnum } from '../transport/transport.types';
 import { AdminGuard } from '../auth/guards/admin.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { Roles } from '../auth/decorators/roles.decorator';
+import { Role } from '../auth/enums/role.enum';
 import {
   PaginatedRoutesObject,
   PaginatedStopsObject,
@@ -28,10 +31,11 @@ import {
 @ApiSecurity('X-API-Key')
 @Controller('gtfs-static')
 export class GtfsStaticController {
-  constructor(private readonly gtfsStaticService: GtfsStaticService) {}
+  constructor(private readonly gtfsStaticService: GtfsStaticService) { }
 
   @Post('ingest')
-  @UseGuards(AdminGuard)
+  @UseGuards(AdminGuard, RolesGuard)
+  @Roles(Role.ADMIN)
   @ApiOperation({
     summary: 'Trigger GTFS static data ingestion (admin only)',
     description:

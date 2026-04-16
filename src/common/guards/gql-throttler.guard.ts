@@ -1,6 +1,6 @@
-import { ExecutionContext, Injectable } from '@nestjs/common';
+import { ExecutionContext, Injectable, Logger } from '@nestjs/common';
 import { GqlExecutionContext } from '@nestjs/graphql';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerException } from '@nestjs/throttler';
 import type { ThrottlerRequest } from '@nestjs/throttler';
 
 /**
@@ -9,6 +9,38 @@ import type { ThrottlerRequest } from '@nestjs/throttler';
  */
 @Injectable()
 export class GqlThrottlerGuard extends ThrottlerGuard {
+  private readonly logger = new Logger(GqlThrottlerGuard.name);
+  private skipIps: Set<string> | null = null;
+
+  protected override async shouldSkip(
+    context: ExecutionContext,
+  ): Promise<boolean> {
+    // Lazy-initialize the skip list from process.env
+    if (this.skipIps === null) {
+      const raw = process.env.THROTTLE_SKIP_IPS ?? '';
+      this.skipIps = new Set(
+        raw
+          .split(',')
+          .map((ip) => ip.trim())
+          .filter(Boolean),
+      );
+      if (this.skipIps.size > 0) {
+        this.logger.warn(
+          `Rate limiting BYPASSED for IPs: ${[...this.skipIps].join(
+            ', ',
+          )} — do not use THROTTLE_SKIP_IPS in production`,
+        );
+      }
+    }
+
+    if (this.skipIps.size === 0) return false;
+
+    const { req } = this.getRequestResponse(context) as { req: any };
+    const ip: string = (req.ip as string) ?? '';
+
+    return this.skipIps.has(ip);
+  }
+
   protected override async handleRequest(
     requestProps: ThrottlerRequest,
   ): Promise<boolean> {
@@ -20,24 +52,43 @@ export class GqlThrottlerGuard extends ThrottlerGuard {
     const permissions = user?.permissions || [];
     const isAdmin =
       user?.role === 'admin' ||
-      (Array.isArray(permissions) && permissions.includes('admin'));
+      permissions.includes('admin') ||
+      permissions.includes('throttler:bypass');
 
     if (isAdmin) {
-      // Admins bypass rate limits for safety and unhindered management.
+      // Admins and users with throttler:bypass bypass rate limits
       return true;
     }
 
-    // Check for 'app-authorised' permission
-    const isAppAuth =
-      Array.isArray(permissions) && permissions.includes('app-authorised');
+    // Check for 'app-authorised' or 'throttler:high' permission
+    const isHighTier =
+      permissions.includes('app-authorised') ||
+      permissions.includes('throttler:high');
 
-    if (isAppAuth) {
-      // app-authorised keys get a much higher limit (e.g., 10x default)
+    if (isHighTier) {
+      // High-tier keys get a much higher limit (e.g., 10x default)
       requestProps.limit = limit * 10;
     }
 
     // Standard 'user' role or unauthenticated IP use the default limit (120 req/min)
     return super.handleRequest(requestProps);
+  }
+
+  protected override async throwThrottlingException(
+    context: ExecutionContext,
+    throttlerLimitDetail: Parameters<
+      ThrottlerGuard['throwThrottlingException']
+    >[1],
+  ): Promise<void> {
+    const { req } = this.getRequestResponse(context) as { req: any };
+    const path: string =
+      (req.path as string | undefined) ??
+      (req.body?.operationName as string | undefined) ??
+      'unknown';
+    this.logger.warn(
+      `Rate limit exceeded — tracker=${throttlerLimitDetail.tracker} totalHits=${throttlerLimitDetail.totalHits}/${throttlerLimitDetail.limit} path=${path}`,
+    );
+    return super.throwThrottlingException(context, throttlerLimitDetail);
   }
 
   protected override async getTracker(

@@ -50,6 +50,13 @@
       "when": 1773724246678,
       "tag": "0006_strong_the_captain",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1776202643455,
+      "tag": "0007_faulty_paibok",
+      "breakpoints": true
     }
   ]
 }

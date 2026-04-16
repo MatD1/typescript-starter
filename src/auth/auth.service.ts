@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { apiKey } from '@better-auth/api-key';
+import { admin, bearer } from 'better-auth/plugins';
 import { DRIZZLE } from '../database/database.module';
 import type { DrizzleDB } from '../database/database.module';
 import * as authSchema from '../database/schema/auth.schema';
@@ -53,6 +54,7 @@ export class AuthService implements OnModuleInit {
             timeWindow: 60000, // 1 minute
           },
         }),
+        admin(), bearer(),
       ],
 
       // Disable CSRF check in development so API testing tools (Postman,
@@ -69,7 +71,8 @@ export class AuthService implements OnModuleInit {
           session: authSchema.session,
           account: authSchema.account,
           verification: authSchema.verification,
-          apiKey: authSchema.apiKey,
+          // BetterAuth's api-key plugin looks for the model name "apikey" (all lowercase)
+          apikey: authSchema.apiKey,
         },
       }),
 
