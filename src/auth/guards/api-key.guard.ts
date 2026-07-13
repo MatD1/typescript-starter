@@ -2,6 +2,7 @@ import {
   CanActivate,
   ExecutionContext,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -12,6 +13,8 @@ import { GqlExecutionContext } from '@nestjs/graphql';
 
 @Injectable()
 export class ApiKeyGuard implements CanActivate {
+  private readonly logger = new Logger(ApiKeyGuard.name);
+
   constructor(
     private readonly apiKeyService: ApiKeyService,
     private readonly reflector: Reflector,
@@ -25,14 +28,27 @@ export class ApiKeyGuard implements CanActivate {
     if (isPublic) return true;
 
     const req = this.getRequest(context);
-    const apiKeyValue = req.headers['x-api-key'] as string | undefined;
-    const bearerValue = req.headers['authorization']?.startsWith('Bearer ')
-      ? req.headers['authorization'].slice(7).trim()
-      : undefined;
+    const apiKeyHeader = req.headers['x-api-key'];
+    const apiKeyValue = Array.isArray(apiKeyHeader)
+      ? apiKeyHeader[0]?.trim()
+      : apiKeyHeader?.trim();
+    const authorization = req.headers['authorization'];
+    const bearerMatch = authorization?.match(/^Bearer\s+(.+)$/i);
+    const bearerValue = bearerMatch?.[1]?.trim();
 
     const credential = apiKeyValue ?? bearerValue;
 
     if (!credential) {
+      const body = req.body as { operationName?: unknown } | undefined;
+      const operation =
+        typeof body?.operationName === 'string'
+          ? body.operationName.slice(0, 80)
+          : 'unknown';
+      const userAgent = (req.headers['user-agent'] ?? 'unknown').slice(0, 120);
+      const origin = (req.headers.origin ?? 'none').slice(0, 120);
+      this.logger.warn(
+        `Missing API credential operation=${operation} userAgent=${userAgent} origin=${origin}`,
+      );
       throw new UnauthorizedException(
         'Provide X-API-Key: nsw_xxx or Authorization: Bearer <session-token>',
       );

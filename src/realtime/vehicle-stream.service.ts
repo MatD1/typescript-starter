@@ -27,8 +27,17 @@ export class VehicleStreamService {
 
     @Interval(15_000)
     async broadcastAll() {
+        // Railway serverless decides idleness from outbound traffic. Do not poll
+        // TfNSW when nobody is consuming an SSE vehicle stream.
+        const allListeners = this.emitters.get('all')?.listenerCount('vehicles') ?? 0;
+        const activeModes = TRANSPORT_MODES.filter((mode) =>
+            allListeners > 0 ||
+            (this.emitters.get(mode)?.listenerCount('vehicles') ?? 0) > 0,
+        );
+        if (activeModes.length === 0) return;
+
         await Promise.allSettled(
-            TRANSPORT_MODES.map((m) => this.broadcastMode(m as TransportMode)),
+            activeModes.map((m) => this.broadcastMode(m as TransportMode)),
         );
     }
 

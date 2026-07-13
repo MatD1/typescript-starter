@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { TransportService } from './transport.service';
+import { of, throwError } from 'rxjs';
+import { ServiceUnavailableException } from '@nestjs/common';
 
 describe('TransportService.buildGtfsRtUrl', () => {
   let service: TransportService;
@@ -153,6 +155,73 @@ describe('TransportService.buildGtfsRtUrl', () => {
       });
 
       expect(params.depArrMacro).toBe('arr');
+    });
+  });
+
+  describe('TfNSW credential handling', () => {
+    it('normalizes a mistakenly prefixed environment value', async () => {
+      const httpService = {
+        get: jest.fn().mockReturnValue(of({ data: Buffer.from('feed') })),
+      };
+      const prefixedService = new TransportService(
+        httpService as any,
+        {
+          get: (key: string) =>
+            key === 'transport.baseUrl'
+              ? 'https://api.transport.nsw.gov.au'
+              : '  apikey test-key  ',
+        } as ConfigService,
+      );
+
+      await prefixedService.getGtfsRealtime('alerts', 'sydneytrains');
+
+      expect(httpService.get).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: 'apikey test-key',
+          }),
+        }),
+      );
+    });
+
+    it('does not call TfNSW when the key is missing', async () => {
+      const httpService = { get: jest.fn() };
+      const unconfiguredService = new TransportService(
+        httpService as any,
+        {
+          get: (key: string) =>
+            key === 'transport.baseUrl'
+              ? 'https://api.transport.nsw.gov.au'
+              : undefined,
+        } as ConfigService,
+      );
+
+      await expect(
+        unconfiguredService.getGtfsRealtime('alerts', 'buses'),
+      ).rejects.toThrow(/not configured/);
+      expect(httpService.get).not.toHaveBeenCalled();
+    });
+
+    it('classifies an upstream 401 as a service configuration failure', async () => {
+      const httpService = {
+        get: jest
+          .fn()
+          .mockReturnValue(throwError(() => ({ response: { status: 401 } }))),
+      };
+      const configuredService = new TransportService(
+        httpService as any,
+        {
+          get: (key: string) =>
+            key === 'transport.baseUrl'
+              ? 'https://api.transport.nsw.gov.au'
+              : 'test-key',
+        } as ConfigService,
+      );
+
+      await expect(
+        configuredService.getGtfsRealtime('alerts', 'buses'),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
     });
   });
 });

@@ -71,16 +71,24 @@ describe('VehicleStreamService', () => {
     });
 
     describe('broadcastAll', () => {
-        it('calls broadcastMode for all transport modes', async () => {
+        it('does not poll when there are no stream listeners', async () => {
             // @ts-ignore
-            const broadcastSpy = jest.spyOn(service, 'broadcastMode').mockResolvedValue(undefined);
+            const broadcastSpy = jest.spyOn(service as any, 'broadcastMode').mockResolvedValue(undefined);
 
             await service.broadcastAll();
 
-            expect(broadcastSpy).toHaveBeenCalledTimes(TRANSPORT_MODES.length);
-            for (const mode of TRANSPORT_MODES) {
-                expect(broadcastSpy).toHaveBeenCalledWith(mode);
-            }
+            expect(broadcastSpy).not.toHaveBeenCalled();
+        });
+
+        it('polls only the mode with an active listener', async () => {
+            // @ts-ignore
+            const broadcastSpy = jest.spyOn(service as any, 'broadcastMode').mockResolvedValue(undefined);
+            service.getEmitter('sydneytrains').on('vehicles', () => undefined);
+
+            await service.broadcastAll();
+
+            expect(broadcastSpy).toHaveBeenCalledTimes(1);
+            expect(broadcastSpy).toHaveBeenCalledWith('sydneytrains');
         });
     });
 });

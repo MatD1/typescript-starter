@@ -61,6 +61,13 @@ The API will be available at:
 - **REST**: `http://localhost:3000/api/v1`
 - **GraphQL**: `http://localhost:3000/graphql`
 - **Swagger UI**: `http://localhost:3000/api/docs`
+- **Railway liveness**: `http://localhost:3000/api/v1/health/live`
+- **Configuration readiness**: `http://localhost:3000/api/v1/health/ready`
+
+Use `/api/v1/health/live` for Railway health checks and uptime monitors. It
+does not call PostgreSQL, Redis, or TfNSW, so it is safe during cold starts and
+does not consume upstream quota. Do not use an authenticated GraphQL operation
+as a liveness check.
 
 ---
 
@@ -196,7 +203,7 @@ query {
 |---|---|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `REDIS_URL` | Valkey/Redis connection string |
-| `NSW_TRANSPORT_API_KEY` | NSW Open Data API token |
+| `NSW_TRANSPORT_API_KEY` | Raw NSW Open Data API token; the TfNSW application must have each required API product enabled |
 | `NSW_TRANSPORT_BASE_URL` | NSW API base URL (`https://api.transport.nsw.gov.au`) |
 | `PORT` | Server port (default: `3000`) |
 | `BETTER_AUTH_SECRET` | Secret for better-auth token signing |

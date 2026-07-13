@@ -34,15 +34,30 @@ export class TripPlannerService {
   async planTrip(
     params: TripPlannerParams,
   ): Promise<TripPlannerResponseObject> {
+    params = {
+      ...params,
+      // TfNSW commonly returns only three journeys when this is omitted.
+      // Six keeps the first screen useful while pagination handles later pages.
+      calcNumberOfTrips: Math.min(
+        Math.max(params.calcNumberOfTrips ?? 6, 1),
+        6,
+      ),
+    };
     if (params.context) {
       try {
         const decoded = Buffer.from(params.context, 'base64').toString('utf8');
-        const { itdDate, itdTime } = JSON.parse(decoded);
+        const { itdDate, itdTime, arriveBy } = JSON.parse(decoded);
+        if (arriveBy !== undefined && arriveBy !== (params.arriveBy === true)) {
+          throw new BadRequestException(
+            'Pagination token search direction does not match',
+          );
+        }
         if (itdDate && itdTime) {
           params.itdDate = itdDate;
           params.itdTime = itdTime;
         }
       } catch (e: any) {
+        if (e instanceof BadRequestException) throw e;
         this.logger.warn(`Failed to parse context string: ${e.message}`);
       }
     }
@@ -64,17 +79,17 @@ export class TripPlannerService {
         );
 
         let context: string | undefined = undefined;
-        // The existing pagination token moves forward from the final
-        // departure. That is correct for depart-after searches, but would
-        // produce misleading later journeys for an arrive-by search. Disable
-        // automatic pagination until a direction-aware earlier-results token
-        // is implemented.
-        if (trips.length > 0 && !params.arriveBy) {
-          const lastTrip = trips[trips.length - 1];
-          const firstLeg = lastTrip.legs[0];
-          if (firstLeg?.departureTimePlanned) {
-            const d = new Date(firstLeg.departureTimePlanned);
-            d.setMinutes(d.getMinutes() + 1);
+        if (trips.length > 0) {
+          const boundaryTrip = params.arriveBy ? trips[0] : trips[trips.length - 1];
+          const boundaryLeg = params.arriveBy
+            ? boundaryTrip.legs[boundaryTrip.legs.length - 1]
+            : boundaryTrip.legs[0];
+          const boundaryTime = params.arriveBy
+            ? boundaryLeg?.arrivalTimePlanned
+            : boundaryLeg?.departureTimePlanned;
+          if (boundaryTime) {
+            const d = new Date(boundaryTime);
+            d.setMinutes(d.getMinutes() + (params.arriveBy ? -1 : 1));
             const formatter = new Intl.DateTimeFormat('en-AU', {
               timeZone: 'Australia/Sydney',
               year: 'numeric',
@@ -90,7 +105,11 @@ export class TripPlannerService {
             const itdDate = `${getPart('year')}${getPart('month')}${getPart('day')}`;
             const itdTime = `${getPart('hour')}${getPart('minute')}`;
             context = Buffer.from(
-              JSON.stringify({ itdDate, itdTime }),
+              JSON.stringify({
+                itdDate,
+                itdTime,
+                arriveBy: params.arriveBy === true,
+              }),
             ).toString('base64');
           }
         }

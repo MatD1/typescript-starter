@@ -60,12 +60,25 @@ export class TransportService {
     private readonly configService: ConfigService,
   ) {
     this.baseUrl = this.configService.get<string>('transport.baseUrl')!;
-    this.apiKey = this.configService.get<string>('transport.apiKey')!;
+    this.apiKey = this.normalizeApiKey(
+      this.configService.get<string>('transport.apiKey'),
+    );
     if (!this.apiKey) {
-      this.logger.warn(
-        'NSW_TRANSPORT_API_KEY is missing or empty. Transport API requests will return 401.',
+      this.logger.error(
+        'NSW_TRANSPORT_API_KEY is missing or empty. TfNSW requests are disabled until it is configured.',
       );
+    } else {
+      this.logger.log('TfNSW API credential configured');
     }
+  }
+
+  private normalizeApiKey(value?: string): string {
+    if (!value) return '';
+    return value
+      .trim()
+      .replace(/^(['"])(.*)\1$/, '$2')
+      .replace(/^apikey\s+/i, '')
+      .trim();
   }
 
   private get authHeaders() {
@@ -202,6 +215,12 @@ export class TransportService {
     url: string,
     config: AxiosRequestConfig,
   ): Promise<T> {
+    if (!this.apiKey) {
+      throw new ServiceUnavailableException(
+        'TfNSW API credentials are not configured',
+      );
+    }
+
     try {
       const response = await firstValueFrom(
         this.httpService.get<T>(url, config),
@@ -214,6 +233,20 @@ export class TransportService {
       };
       const status = axiosErr?.response?.status;
       const msg = `NSW Transport API error: ${axiosErr?.response?.statusText ?? axiosErr?.message ?? 'Unknown'}`;
+      if (status === 401 || status === 403) {
+        this.logger.error(
+          `TfNSW rejected the configured credential [${status}] ${url}. Check key validity, API-product access, and quota in the TfNSW portal.`,
+        );
+        throw new ServiceUnavailableException(
+          'TfNSW authentication is currently unavailable',
+        );
+      }
+      if (status === 429) {
+        this.logger.warn(`TfNSW rate limit exceeded [429] ${url}`);
+        throw new ServiceUnavailableException(
+          'TfNSW request quota is temporarily exhausted',
+        );
+      }
       this.logger.error(`${msg} [${status ?? 'N/A'}] ${url}`);
       if (status === 503 || status === 504) {
         throw new ServiceUnavailableException('NSW Transport API unavailable');

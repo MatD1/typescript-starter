@@ -30,6 +30,7 @@ import { StationsModule } from './stations/stations.module';
 import { DisruptionsModule } from './disruptions/disruptions.module';
 import { GtfsStaticModule } from './gtfs-static/gtfs-static.module';
 import { AdminModule } from './admin/admin.module';
+import { HealthModule } from './health/health.module';
 
 import { ApiKeyGuard } from './auth/guards/api-key.guard';
 import { GqlThrottlerGuard } from './common/guards/gql-throttler.guard';
@@ -113,11 +114,17 @@ const MAX_QUERY_DEPTH = 8;
               },
               async didEncounterErrors({ errors, operationName }) {
                 for (const err of errors) {
-                  graphqlLogger.error(
-                    `Operation: ${operationName ?? '<anonymous>'}`,
-                    err.message,
-                    err.stack,
-                  );
+                  const code = err.extensions?.code;
+                  const label = `Operation: ${operationName ?? '<anonymous>'}`;
+                  if (
+                    code === 'UNAUTHENTICATED' ||
+                    code === 'FORBIDDEN' ||
+                    code === 'BAD_USER_INPUT'
+                  ) {
+                    graphqlLogger.warn(`${label} — ${code}: ${err.message}`);
+                  } else {
+                    graphqlLogger.error(label, err.message, err.stack);
+                  }
                 }
               },
             };
@@ -168,6 +175,7 @@ const MAX_QUERY_DEPTH = 8;
     DisruptionsModule,
     GtfsStaticModule,
     AdminModule,
+    HealthModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ApiKeyGuard },

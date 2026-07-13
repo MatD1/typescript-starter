@@ -16,6 +16,10 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
   catch(exception: unknown, host: ArgumentsHost) {
     if (host.getType<GqlContextType>() === 'graphql') {
+      const status =
+        exception instanceof HttpException
+          ? exception.getStatus()
+          : HttpStatus.INTERNAL_SERVER_ERROR;
       const message =
         exception instanceof HttpException
           ? exception.message
@@ -23,11 +27,27 @@ export class GlobalExceptionFilter implements ExceptionFilter {
             ? exception.message
             : 'Internal server error';
       const stack = exception instanceof Error ? exception.stack : undefined;
-      this.logger.error(
-        `GraphQL error: ${message}`,
-        stack ?? String(exception),
-      );
-      throw new GraphQLError(message);
+      if (status >= 500) {
+        this.logger.error(
+          `GraphQL error: ${message}`,
+          stack ?? String(exception),
+        );
+      } else {
+        this.logger.warn(`GraphQL request rejected [${status}]: ${message}`);
+      }
+      const code =
+        status === HttpStatus.UNAUTHORIZED
+          ? 'UNAUTHENTICATED'
+          : status === HttpStatus.FORBIDDEN
+            ? 'FORBIDDEN'
+            : status === HttpStatus.BAD_REQUEST
+              ? 'BAD_USER_INPUT'
+              : status >= 500
+                ? 'INTERNAL_SERVER_ERROR'
+                : 'HTTP_ERROR';
+      throw new GraphQLError(message, {
+        extensions: { code, http: { status } },
+      });
     }
 
     const ctx = host.switchToHttp();

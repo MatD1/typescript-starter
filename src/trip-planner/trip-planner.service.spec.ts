@@ -95,7 +95,7 @@ describe('TripPlannerService.findStops validation', () => {
     );
   });
 
-  it('does not issue a forward pagination token for arrive-by searches', async () => {
+  it('issues a direction-aware earlier token for arrive-by searches', async () => {
     mockTransportService.getTripPlan.mockResolvedValue({
       journeys: [
         {
@@ -118,10 +118,46 @@ describe('TripPlannerService.findStops validation', () => {
       arriveBy: true,
     });
 
-    expect(response.context).toBeUndefined();
+    expect(response.context).toBeDefined();
+    const token = JSON.parse(
+      Buffer.from(response.context!, 'base64').toString('utf8'),
+    );
+    expect(token).toEqual({
+      itdDate: '20260714',
+      itdTime: '0859',
+      arriveBy: true,
+    });
     expect(response.searchMode).toBe('arrive');
     expect(response.requestedDateTime).toBe('202607140900');
     expect(response.timezone).toBe('Australia/Sydney');
+  });
+
+  it('requests six trips by default to avoid the upstream three-trip page', async () => {
+    mockTransportService.getTripPlan.mockResolvedValue({ journeys: [] });
+
+    await service.planTrip({
+      originId: '10101100',
+      destId: '10102027',
+    });
+
+    expect(mockTransportService.getTripPlan).toHaveBeenCalledWith(
+      expect.objectContaining({ calcNumberOfTrips: 6 }),
+    );
+  });
+
+  it('rejects a pagination token from the opposite search direction', async () => {
+    const context = Buffer.from(
+      JSON.stringify({
+        itdDate: '20260714',
+        itdTime: '0859',
+        arriveBy: true,
+      }),
+    ).toString('base64');
+
+    await expect(
+      service.planTrip({ context, arriveBy: false }),
+    ).rejects.toThrow(/direction does not match/);
+    expect(mockTransportService.getTripPlan).not.toHaveBeenCalled();
   });
 
   it('rejects incomplete or invalid date/time boundaries', async () => {
