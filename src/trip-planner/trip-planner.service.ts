@@ -58,7 +58,12 @@ export class TripPlannerService {
         const trips = this.mapTrips(raw);
 
         let context: string | undefined = undefined;
-        if (trips.length > 0) {
+        // The existing pagination token moves forward from the final
+        // departure. That is correct for depart-after searches, but would
+        // produce misleading later journeys for an arrive-by search. Disable
+        // automatic pagination until a direction-aware earlier-results token
+        // is implemented.
+        if (trips.length > 0 && !params.arriveBy) {
           const lastTrip = trips[trips.length - 1];
           const firstLeg = lastTrip.legs[0];
           if (firstLeg?.departureTimePlanned) {

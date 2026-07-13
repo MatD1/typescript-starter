@@ -1,4 +1,11 @@
-import { Args, Int, Parent, Query, ResolveField, Resolver } from '@nestjs/graphql';
+import {
+  Args,
+  Int,
+  Parent,
+  Query,
+  ResolveField,
+  Resolver,
+} from '@nestjs/graphql';
 import { TripPlannerService } from './trip-planner.service';
 import {
   TripResultObject,
@@ -12,7 +19,7 @@ import { StopFinderTypeEnum } from '../transport/transport.types';
 
 @Resolver()
 export class TripPlannerResolver {
-  constructor(private readonly tripPlannerService: TripPlannerService) { }
+  constructor(private readonly tripPlannerService: TripPlannerService) {}
 
   @Query(() => TripPlannerResponseObject, {
     description: 'Plan a journey between two locations.',
@@ -34,6 +41,12 @@ export class TripPlannerResolver {
     destCoord?: string,
     @Args('itdDate', { nullable: true }) itdDate?: string,
     @Args('itdTime', { nullable: true }) itdTime?: string,
+    @Args('arriveBy', {
+      nullable: true,
+      description:
+        'When true, itdDate/itdTime is the required arrival time. Defaults to departure time.',
+    })
+    arriveBy?: boolean,
     @Args('calcNumberOfTrips', { nullable: true, type: () => Int })
     calcNumberOfTrips?: number,
     @Args('wheelchair', { nullable: true }) wheelchair?: boolean,
@@ -48,6 +61,7 @@ export class TripPlannerResolver {
       destCoord,
       itdDate,
       itdTime,
+      arriveBy,
       calcNumberOfTrips,
       wheelchair,
       context,
@@ -107,7 +121,7 @@ export class TripPlannerResolver {
 
 @Resolver(() => LegObject)
 export class LegResolver {
-  constructor(private readonly dataLoader: RouteMetadataDataLoader) { }
+  constructor(private readonly dataLoader: RouteMetadataDataLoader) {}
 
   @ResolveField(() => String, { nullable: true })
   async lineCode(@Parent() leg: LegObject) {
@@ -126,7 +140,7 @@ export class LegResolver {
 
 @Resolver(() => DepartureObject)
 export class DepartureResolver {
-  constructor(private readonly dataLoader: RouteMetadataDataLoader) { }
+  constructor(private readonly dataLoader: RouteMetadataDataLoader) {}
 
   @ResolveField(() => String, { nullable: true })
   async lineCode(@Parent() departure: DepartureObject) {

@@ -25,7 +25,7 @@ import {
 @ApiSecurity('X-API-Key')
 @Controller('trip-planner')
 export class TripPlannerController {
-  constructor(private readonly tripPlannerService: TripPlannerService) { }
+  constructor(private readonly tripPlannerService: TripPlannerService) {}
 
   @Get('trip')
   @ApiOperation({
@@ -39,25 +39,40 @@ export class TripPlannerController {
       '**Pagination**: Use the `context` token from a previous response to load more trip options. ' +
       'Omit for the initial request.',
   })
-  @ApiQuery({ name: 'originName', required: false, description: 'Origin stop name (text match)' })
+  @ApiQuery({
+    name: 'originName',
+    required: false,
+    description: 'Origin stop name (text match)',
+  })
   @ApiQuery({
     name: 'originId',
     required: false,
-    description: 'Origin stop/location ID (preferred — faster than name lookup)',
+    description:
+      'Origin stop/location ID (preferred — faster than name lookup)',
     example: '10101100',
   })
   @ApiQuery({
     name: 'originCoord',
     required: false,
-    description: 'Origin as WGS84 coordinate in `lon:lat:EPSG:4326` format (longitude first)',
+    description:
+      'Origin as WGS84 coordinate in `lon:lat:EPSG:4326` format (longitude first)',
     example: '151.2093:-33.8688:EPSG:4326',
   })
-  @ApiQuery({ name: 'destName', required: false, description: 'Destination stop name (text match)' })
-  @ApiQuery({ name: 'destId', required: false, description: 'Destination stop/location ID' })
+  @ApiQuery({
+    name: 'destName',
+    required: false,
+    description: 'Destination stop name (text match)',
+  })
+  @ApiQuery({
+    name: 'destId',
+    required: false,
+    description: 'Destination stop/location ID',
+  })
   @ApiQuery({
     name: 'destCoord',
     required: false,
-    description: 'Destination as WGS84 coordinate in `lon:lat:EPSG:4326` format',
+    description:
+      'Destination as WGS84 coordinate in `lon:lat:EPSG:4326` format',
     example: '151.1234:-33.7890:EPSG:4326',
   })
   @ApiQuery({
@@ -71,6 +86,13 @@ export class TripPlannerController {
     required: false,
     description: 'Departure time in HHmm format (24 hour). Omit for now.',
     example: '0830',
+  })
+  @ApiQuery({
+    name: 'arriveBy',
+    required: false,
+    type: Boolean,
+    description:
+      'If true, itdDate/itdTime is the required arrival time. Defaults to false (depart after).',
   })
   @ApiQuery({
     name: 'calcNumberOfTrips',
@@ -106,6 +128,8 @@ export class TripPlannerController {
     @Query('destCoord') destCoord?: string,
     @Query('itdDate') itdDate?: string,
     @Query('itdTime') itdTime?: string,
+    @Query('arriveBy', new ParseBoolPipe({ optional: true }))
+    arriveBy?: boolean,
     @Query('calcNumberOfTrips', new ParseIntPipe({ optional: true }))
     calcNumberOfTrips?: number,
     @Query('wheelchair', new ParseBoolPipe({ optional: true }))
@@ -121,6 +145,7 @@ export class TripPlannerController {
       destCoord,
       itdDate,
       itdTime,
+      arriveBy: arriveBy ?? false,
       calcNumberOfTrips,
       wheelchair: wheelchair ?? false,
       context,
@@ -138,7 +163,8 @@ export class TripPlannerController {
   @ApiQuery({
     name: 'query',
     required: true,
-    description: 'Search term (stop name, stop ID, or `lon:lat:EPSG:4326` for coordinate)',
+    description:
+      'Search term (stop name, stop ID, or `lon:lat:EPSG:4326` for coordinate)',
     example: 'Central Station',
   })
   @ApiQuery({
@@ -152,7 +178,8 @@ export class TripPlannerController {
   })
   @ApiOkResponse({
     type: [StopObject],
-    description: 'Array of matching stops/locations. Use `id` for subsequent trip planning calls.',
+    description:
+      'Array of matching stops/locations. Use `id` for subsequent trip planning calls.',
   })
   findStops(@Query('query') query: string, @Query('type') type?: string) {
     return this.tripPlannerService.findStops({
@@ -201,7 +228,8 @@ export class TripPlannerController {
   })
   @ApiOkResponse({
     type: [DepartureObject],
-    description: 'Array of upcoming departures with real-time estimates where available',
+    description:
+      'Array of upcoming departures with real-time estimates where available',
   })
   getDepartures(
     @Query('stopId') stopId?: string,
@@ -245,7 +273,8 @@ export class TripPlannerController {
   })
   @ApiOkResponse({
     type: [StopObject],
-    description: 'Array of stops within the search radius, ordered by distance ascending',
+    description:
+      'Array of stops within the search radius, ordered by distance ascending',
   })
   searchNearby(
     @Query('lat', ParseFloatPipe) lat: number,

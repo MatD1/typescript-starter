@@ -10,6 +10,7 @@ describe('TripPlannerService.findStops validation', () => {
 
   const mockTransportService = {
     getStopFinder: jest.fn(),
+    getTripPlan: jest.fn(),
   };
 
   const mockGtfsStaticService = {
@@ -92,5 +93,31 @@ describe('TripPlannerService.findStops validation', () => {
     expect(mockTransportService.getStopFinder).toHaveBeenCalledWith(
       expect.objectContaining({ name_sf: 'Wynyard' }),
     );
+  });
+
+  it('does not issue a forward pagination token for arrive-by searches', async () => {
+    mockTransportService.getTripPlan.mockResolvedValue({
+      journeys: [
+        {
+          legs: [
+            {
+              origin: { departureTimePlanned: '2026-07-14T08:00:00+10:00' },
+              destination: { arrivalTimePlanned: '2026-07-14T09:00:00+10:00' },
+              transportation: {},
+            },
+          ],
+        },
+      ],
+    });
+
+    const response = await service.planTrip({
+      originId: '10101100',
+      destId: '10102027',
+      itdDate: '20260714',
+      itdTime: '0900',
+      arriveBy: true,
+    });
+
+    expect(response.context).toBeUndefined();
   });
 });

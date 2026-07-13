@@ -175,7 +175,9 @@ export class TransportService {
   /**
    * Maps our TripPlannerParams to v1 API format (name_origin, type_origin, etc.).
    */
-  private mapTripParamsToV1(params: TripPlannerParams): Record<string, unknown> {
+  private mapTripParamsToV1(
+    params: TripPlannerParams,
+  ): Record<string, unknown> {
     const nameOrigin =
       params.originId ?? params.originCoord ?? params.originName ?? '10101331';
     const typeOrigin = params.originCoord ? 'coord' : 'any';
@@ -184,7 +186,7 @@ export class TransportService {
     const typeDest = params.destCoord ? 'coord' : 'any';
 
     return {
-      depArrMacro: 'dep',
+      depArrMacro: params.arriveBy ? 'arr' : 'dep',
       name_origin: nameOrigin,
       type_origin: typeOrigin,
       name_destination: nameDest,

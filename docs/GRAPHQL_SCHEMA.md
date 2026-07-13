@@ -236,7 +236,7 @@ query AllDisruptions {
 ### planTrip
 
 Journey planner — finds one or more itineraries between two points (v1 API).  
-Uses `depArrMacro: dep` (trips departing after specified time). Cached 300 s per unique parameter set.
+Uses departure-time search by default, or arrival-time search when `arriveBy` is true. Cached 300 s per unique parameter set.
 
 ```graphql
 planTrip(
@@ -248,6 +248,7 @@ planTrip(
   destCoord: String
   itdDate: String
   itdTime: String
+  arriveBy: Boolean
   calcNumberOfTrips: Int
   wheelchair: Boolean
 ): [TripResultObject!]!
@@ -263,6 +264,7 @@ planTrip(
 | `destCoord`         | `String` | `lon:lat:EPSG:4326` (longitude first)            |
 | `itdDate`           | `String` | `YYYYMMDD` (default: now)                       |
 | `itdTime`           | `String` | `HHmm` (default: now)                           |
+| `arriveBy`          | `Boolean`| Treat the supplied date/time as required arrival time |
 | `calcNumberOfTrips`| `Int`    | Alternatives to return (1–6)                     |
 | `wheelchair`        | `Boolean`| If true, only wheelchair-accessible options      |
 

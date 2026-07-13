@@ -87,6 +87,8 @@ export interface TripPlannerParams {
   destId?: string;
   itdDate?: string;
   itdTime?: string;
+  /** When true, find journeys arriving by itdDate/itdTime instead of departing after it. */
+  arriveBy?: boolean;
   calcNumberOfTrips?: number;
   wheelchair?: boolean;
   context?: string;

@@ -386,6 +386,7 @@ Plan a journey between two locations (v1 API).
 | `destCoord`         | string  | No*      | `lon:lat:EPSG:4326` (longitude first) |
 | `itdDate`           | string  | No       | Date `YYYYMMDD`                     |
 | `itdTime`           | string  | No       | Time `HHmm`                         |
+| `arriveBy`          | boolean | No       | Treat date/time as required arrival time |
 | `calcNumberOfTrips` | number  | No       | Number of alternatives (1–6)       |
 | `wheelchair`        | boolean | No       | If true, only wheelchair-accessible options |
 

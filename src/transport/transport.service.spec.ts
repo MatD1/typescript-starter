@@ -50,14 +50,12 @@ describe('TransportService.buildGtfsRtUrl', () => {
     },
   );
 
-  it('tripupdates/intercity → v2/gtfs/realtime/sydneytrains (intercity merged into sydneytrains)',
-    () => {
-      const url = service.buildGtfsRtUrl('tripupdates', 'intercity');
-      expect(url).toBe(
-        'https://api.transport.nsw.gov.au/v2/gtfs/realtime/sydneytrains',
-      );
-    },
-  );
+  it('tripupdates/intercity → v2/gtfs/realtime/sydneytrains (intercity merged into sydneytrains)', () => {
+    const url = service.buildGtfsRtUrl('tripupdates', 'intercity');
+    expect(url).toBe(
+      'https://api.transport.nsw.gov.au/v2/gtfs/realtime/sydneytrains',
+    );
+  });
 
   // ── Vehicle positions: v2 modes ───────────────────────────────────────────
 
@@ -90,14 +88,12 @@ describe('TransportService.buildGtfsRtUrl', () => {
     },
   );
 
-  it('vehiclepos/intercity → v2/gtfs/vehiclepos/sydneytrains (intercity merged into sydneytrains)',
-    () => {
-      const url = service.buildGtfsRtUrl('vehiclepos', 'intercity');
-      expect(url).toBe(
-        'https://api.transport.nsw.gov.au/v2/gtfs/vehiclepos/sydneytrains',
-      );
-    },
-  );
+  it('vehiclepos/intercity → v2/gtfs/vehiclepos/sydneytrains (intercity merged into sydneytrains)', () => {
+    const url = service.buildGtfsRtUrl('vehiclepos', 'intercity');
+    expect(url).toBe(
+      'https://api.transport.nsw.gov.au/v2/gtfs/vehiclepos/sydneytrains',
+    );
+  });
 
   it('vehiclepos/ferries → v1/gtfs/vehiclepos/ferries/sydneyferries path', () => {
     const url = service.buildGtfsRtUrl('vehiclepos', 'ferries');
@@ -130,12 +126,33 @@ describe('TransportService.buildGtfsRtUrl', () => {
     },
   );
 
-  it('alerts/intercity → v2/gtfs/alerts/sydneytrains (intercity merged into sydneytrains)',
-    () => {
-      const url = service.buildGtfsRtUrl('alerts', 'intercity');
-      expect(url).toBe(
-        'https://api.transport.nsw.gov.au/v2/gtfs/alerts/sydneytrains',
-      );
-    },
-  );
+  it('alerts/intercity → v2/gtfs/alerts/sydneytrains (intercity merged into sydneytrains)', () => {
+    const url = service.buildGtfsRtUrl('alerts', 'intercity');
+    expect(url).toBe(
+      'https://api.transport.nsw.gov.au/v2/gtfs/alerts/sydneytrains',
+    );
+  });
+
+  describe('trip planner date/time direction', () => {
+    it('uses departure mode by default', () => {
+      const params = service['mapTripParamsToV1']({
+        originId: '10101100',
+        destId: '10102027',
+      });
+
+      expect(params.depArrMacro).toBe('dep');
+    });
+
+    it('uses arrival mode when arriveBy is true', () => {
+      const params = service['mapTripParamsToV1']({
+        originId: '10101100',
+        destId: '10102027',
+        itdDate: '20260714',
+        itdTime: '0900',
+        arriveBy: true,
+      });
+
+      expect(params.depArrMacro).toBe('arr');
+    });
+  });
 });
