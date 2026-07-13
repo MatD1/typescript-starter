@@ -22,6 +22,7 @@ Content-Type: application/json
 ```
 
 **Response** `200`
+
 ```json
 { "user": { "id": "...", "email": "user@example.com", "name": "Alice" } }
 ```
@@ -41,6 +42,7 @@ Content-Type: application/json
 ```
 
 **Response** `200`
+
 ```json
 {
   "user": { "id": "...", "email": "user@example.com" },
@@ -62,6 +64,7 @@ Content-Type: application/json
 ```
 
 **Response** `200`
+
 ```json
 {
   "sessionToken": "<session-token>",
@@ -94,6 +97,7 @@ Content-Type: application/json
 ```
 
 **Response** `200`
+
 ```json
 {
   "sessionToken": "<new-session-token>",
@@ -121,6 +125,7 @@ Content-Type: application/json
 ```
 
 **Response** `201`
+
 ```json
 { "key": "nsw_abc123...", "id": "...", "start": "nsw_abc123" }
 ```
@@ -137,6 +142,7 @@ Authorization: Bearer <session-token>
 ```
 
 **Response** `200`
+
 ```json
 [
   {
@@ -161,6 +167,7 @@ Authorization: Bearer <session-token>
 ```
 
 **Response** `200`
+
 ```json
 { "success": true }
 ```
@@ -173,9 +180,9 @@ Authorization: Bearer <session-token>
 
 Live vehicle positions from GTFS-RT feed.
 
-| Param  | Type           | Required | Description                           |
-|--------|----------------|----------|---------------------------------------|
-| `mode` | `TransportMode`| No       | Filter to one mode (all if omitted)   |
+| Param  | Type            | Required | Description                         |
+| ------ | --------------- | -------- | ----------------------------------- |
+| `mode` | `TransportMode` | No       | Filter to one mode (all if omitted) |
 
 **`TransportMode` values**: `sydneytrains` · `intercity` · `buses` · `nswtrains` · `ferries` · `metro` · `lightrail`
 
@@ -185,9 +192,11 @@ Live vehicle positions from GTFS-RT feed.
 GET /api/v1/realtime/vehicles?mode=sydneytrains
 Authorization: Bearer <session-token>
 ```
+
 Or: `X-API-Key: nsw_xxx`
 
 **Response** `200` — array of `VehiclePosition`
+
 ```json
 [
   {
@@ -224,9 +233,9 @@ Or: `X-API-Key: nsw_xxx`
 
 Live trip updates (delays, cancellations, added trips).
 
-| Param  | Type           | Required | Description |
-|--------|----------------|----------|-------------|
-| `mode` | `TransportMode`| No       | Filter mode |
+| Param  | Type            | Required | Description |
+| ------ | --------------- | -------- | ----------- |
+| `mode` | `TransportMode` | No       | Filter mode |
 
 > **Note:** `mode=intercity` returns trip updates filtered from Sydney Trains by intercity route (BMT, CCN, HUN, SCO, SHL).
 
@@ -236,6 +245,7 @@ X-API-Key: nsw_xxx
 ```
 
 **Response** `200` — array of `TripUpdate`
+
 ```json
 [
   {
@@ -270,10 +280,14 @@ and vehicle amenity info. Use the `tripId` from a planned journey leg.
 
 Returns **404** if the vehicle is not yet active (e.g. pre-departure).
 
-| Param    | Type           | Required | Description                                            |
-|----------|----------------|----------|--------------------------------------------------------|
-| `tripId` | `string`       | **Yes**  | GTFS trip ID — from a `LegObject.tripId` in a plan    |
-| `mode`   | `TransportMode`| No       | Mode hint — optional but improves response time        |
+| Param             | Type            | Required | Description                                         |
+| ----------------- | --------------- | -------- | --------------------------------------------------- |
+| `tripId`          | `string`        | **Yes**  | GTFS trip ID — from a `LegObject.tripId` in a plan  |
+| `mode`            | `TransportMode` | No       | Mode hint — optional but improves response time     |
+| `scheduledTripId` | `string`        | No       | Scheduled ID fallback when it differs from realtime |
+| `routeId`         | `string`        | No       | Exact GTFS route fallback identity                  |
+| `startDate`       | `string`        | No       | GTFS service date (`yyyyMMdd`)                      |
+| `startTime`       | `string`        | No       | GTFS service time (`HH:mm:ss`)                      |
 
 ```http
 GET /api/v1/realtime/track-trip?tripId=28.T.1-T1-Y-mjp-1.1.H&mode=sydneytrains
@@ -281,6 +295,7 @@ X-API-Key: nsw_xxx
 ```
 
 **Response** `200` — `TrackedTripObject`
+
 ```json
 {
   "tripId": "28.T.1-T1-Y-mjp-1.1.H",
@@ -301,8 +316,16 @@ X-API-Key: nsw_xxx
     "trackDirection": "DOWN",
     "timestamp": 1700000000,
     "consist": [
-      { "positionInConsist": 1, "occupancyStatus": "MANY_SEATS_AVAILABLE", "quietCarriage": false },
-      { "positionInConsist": 2, "occupancyStatus": "FEW_SEATS_AVAILABLE",  "quietCarriage": true  }
+      {
+        "positionInConsist": 1,
+        "occupancyStatus": "MANY_SEATS_AVAILABLE",
+        "quietCarriage": false
+      },
+      {
+        "positionInConsist": 2,
+        "occupancyStatus": "FEW_SEATS_AVAILABLE",
+        "quietCarriage": true
+      }
     ]
   },
   "stopTimeUpdates": [
@@ -322,8 +345,12 @@ X-API-Key: nsw_xxx
 ```
 
 **Response** `404` — when vehicle is not yet active
+
 ```json
-{ "statusCode": 404, "message": "Trip ... is not currently active. The vehicle may not have departed yet." }
+{
+  "statusCode": 404,
+  "message": "Trip ... is not currently active. The vehicle may not have departed yet."
+}
 ```
 
 **Cache-Control**: `public, max-age=15`
@@ -336,10 +363,10 @@ X-API-Key: nsw_xxx
 
 Current service alerts from all modes or a specific mode.
 
-| Param    | Type           | Required | Description                                 |
-|----------|----------------|----------|---------------------------------------------|
-| `mode`   | `TransportMode`| No       | Filter mode                                 |
-| `effect` | string         | No       | Filter by effect (`NO_SERVICE`, `DELAYS`, …)|
+| Param    | Type            | Required | Description                                  |
+| -------- | --------------- | -------- | -------------------------------------------- |
+| `mode`   | `TransportMode` | No       | Filter mode                                  |
+| `effect` | string          | No       | Filter by effect (`NO_SERVICE`, `DELAYS`, …) |
 
 > **Note:** `mode=intercity` returns alerts filtered from Sydney Trains by intercity route (BMT, CCN, HUN, SCO, SHL).
 
@@ -349,6 +376,7 @@ X-API-Key: nsw_xxx
 ```
 
 **Response** `200`
+
 ```json
 [
   {
@@ -376,21 +404,24 @@ X-API-Key: nsw_xxx
 
 Plan a journey between two locations (v1 API).
 
-| Param               | Type    | Required | Description                         |
-|---------------------|---------|----------|-------------------------------------|
-| `originId`          | string  | No*      | Stop/place ID of origin             |
-| `originName`        | string  | No*      | Name search for origin              |
-| `originCoord`       | string  | No*      | `lon:lat:EPSG:4326` (longitude first) |
-| `destId`            | string  | No*      | Stop/place ID of destination       |
-| `destName`          | string  | No*      | Name search for destination         |
-| `destCoord`         | string  | No*      | `lon:lat:EPSG:4326` (longitude first) |
-| `itdDate`           | string  | No       | Date `YYYYMMDD`                     |
-| `itdTime`           | string  | No       | Time `HHmm`                         |
-| `arriveBy`          | boolean | No       | Treat date/time as required arrival time |
-| `calcNumberOfTrips` | number  | No       | Number of alternatives (1–6)       |
+| Param               | Type    | Required | Description                                 |
+| ------------------- | ------- | -------- | ------------------------------------------- |
+| `originId`          | string  | No\*     | Stop/place ID of origin                     |
+| `originName`        | string  | No\*     | Name search for origin                      |
+| `originCoord`       | string  | No\*     | `lon:lat:EPSG:4326` (longitude first)       |
+| `destId`            | string  | No\*     | Stop/place ID of destination                |
+| `destName`          | string  | No\*     | Name search for destination                 |
+| `destCoord`         | string  | No\*     | `lon:lat:EPSG:4326` (longitude first)       |
+| `itdDate`           | string  | No\*\*   | Date `YYYYMMDD`                             |
+| `itdTime`           | string  | No\*\*   | Time `HHmm`                                 |
+| `arriveBy`          | boolean | No       | Treat date/time as required arrival time    |
+| `calcNumberOfTrips` | number  | No       | Number of alternatives (1–6)                |
 | `wheelchair`        | boolean | No       | If true, only wheelchair-accessible options |
 
 \* At least one of `originId`, `originName`, or `originCoord` is required for origin, and similarly for destination.
+
+\*\* Date and time are optional for Leave Now, but must be supplied together for
+Depart At or Arrive By. Results outside the requested boundary are removed before caching.
 
 ```http
 GET /api/v1/trip-planner/trip?originId=10101100&destName=Central+Station
@@ -398,26 +429,45 @@ X-API-Key: nsw_xxx
 ```
 
 **Response** `200`
+
 ```json
-[
-  {
-    "legs": [
-      {
-        "transportation": "Sydney Trains Network",
-        "lineName": "T1",
-        "destination": "Central",
-        "origin": { "id": "10101100", "name": "Parramatta", "lat": -33.817, "lon": 151.003, "type": "stop" },
-        "dest": { "id": "10101100", "name": "Central", "lat": -33.879, "lon": 151.207, "type": "stop" },
-        "departureTimePlanned": "2026-03-09T08:00:00+11:00",
-        "departureTimeEstimated": "2026-03-09T08:02:00+11:00",
-        "arrivalTimePlanned": "2026-03-09T08:42:00+11:00",
-        "duration": 2400
-      }
-    ],
-    "duration": 2520,
-    "interchanges": 0
-  }
-]
+{
+  "trips": [
+    {
+      "legs": [
+        {
+          "transportation": "Sydney Trains Network",
+          "lineName": "T1",
+          "destination": "Central",
+          "origin": {
+            "id": "10101100",
+            "name": "Parramatta",
+            "lat": -33.817,
+            "lon": 151.003,
+            "type": "stop"
+          },
+          "dest": {
+            "id": "10101100",
+            "name": "Central",
+            "lat": -33.879,
+            "lon": 151.207,
+            "type": "stop"
+          },
+          "departureTimePlanned": "2026-03-09T08:00:00+11:00",
+          "departureTimeEstimated": "2026-03-09T08:02:00+11:00",
+          "arrivalTimePlanned": "2026-03-09T08:42:00+11:00",
+          "duration": 2400
+        }
+      ],
+      "duration": 2520,
+      "interchanges": 0
+    }
+  ],
+  "searchMode": "depart",
+  "requestedDateTime": "202603090800",
+  "generatedAt": "2026-03-08T21:00:00.000Z",
+  "timezone": "Australia/Sydney"
+}
 ```
 
 **Cache-Control**: `public, max-age=300`
@@ -428,19 +478,19 @@ X-API-Key: nsw_xxx
 
 Search stops/stations by name (v1 API).
 
-| Param   | Type   | Required | Description                          |
-|---------|--------|----------|--------------------------------------|
+| Param   | Type   | Required | Description                                        |
+| ------- | ------ | -------- | -------------------------------------------------- |
 | `query` | string | ✓        | Search term. Format depends on `type` (see below). |
-| `type`  | string | No       | `any` (default), `stop`, `poi`, `coord` |
+| `type`  | string | No       | `any` (default), `stop`, `poi`, `coord`            |
 
 **Important:** `type` defines the expected `query` format. Use `any` for free-text name search.
 
-| type   | query format              | Example                          |
-|--------|---------------------------|----------------------------------|
-| `any`  | Any text (name, partial)   | `Circular Quay`, `Wynyard`       |
-| `stop` | Stop ID only (numeric)    | `200060`, `10101100`             |
-| `coord`| `lon:lat:EPSG:4326`       | `151.206:-33.884:EPSG:4326`      |
-| `poi`  | Restrictive; prefer `any`  | —                                |
+| type    | query format              | Example                     |
+| ------- | ------------------------- | --------------------------- |
+| `any`   | Any text (name, partial)  | `Circular Quay`, `Wynyard`  |
+| `stop`  | Stop ID only (numeric)    | `200060`, `10101100`        |
+| `coord` | `lon:lat:EPSG:4326`       | `151.206:-33.884:EPSG:4326` |
+| `poi`   | Restrictive; prefer `any` | —                           |
 
 ```http
 GET /api/v1/trip-planner/stop-finder?query=Circular+Quay
@@ -448,12 +498,14 @@ X-API-Key: nsw_xxx
 ```
 
 Stop ID lookup:
+
 ```http
 GET /api/v1/trip-planner/stop-finder?query=200060&type=stop
 X-API-Key: nsw_xxx
 ```
 
 **Response** `200` — array of `Stop`
+
 ```json
 [
   {
@@ -476,12 +528,12 @@ X-API-Key: nsw_xxx
 
 Departure board for a stop.
 
-| Param      | Type   | Required | Description         |
-|------------|--------|----------|---------------------|
-| `stopId`   | string | No*      | Stop ID             |
-| `stopName` | string | No*      | Stop name search    |
-| `itdDate`  | string | No       | Date `YYYYMMDD`     |
-| `itdTime`  | string | No       | Time `HHmm`         |
+| Param      | Type   | Required | Description      |
+| ---------- | ------ | -------- | ---------------- |
+| `stopId`   | string | No\*     | Stop ID          |
+| `stopName` | string | No\*     | Stop name search |
+| `itdDate`  | string | No       | Date `YYYYMMDD`  |
+| `itdTime`  | string | No       | Time `HHmm`      |
 
 ```http
 GET /api/v1/trip-planner/departures?stopId=200060
@@ -489,6 +541,7 @@ X-API-Key: nsw_xxx
 ```
 
 **Response** `200`
+
 ```json
 [
   {
@@ -512,10 +565,10 @@ X-API-Key: nsw_xxx
 
 Find stops near a coordinate.
 
-| Param    | Type   | Required | Description            |
-|----------|--------|----------|------------------------|
-| `lat`    | number | ✓        | Latitude               |
-| `lon`    | number | ✓        | Longitude              |
+| Param    | Type   | Required | Description                           |
+| -------- | ------ | -------- | ------------------------------------- |
+| `lat`    | number | ✓        | Latitude                              |
+| `lon`    | number | ✓        | Longitude                             |
 | `radius` | number | No       | Search radius in metres (default 500) |
 
 ```http
@@ -535,10 +588,10 @@ X-API-Key: nsw_xxx
 
 Search stations by name from the local GTFS static database.
 
-| Param   | Type   | Required | Description             |
-|---------|--------|----------|-------------------------|
-| `query` | string | ✓        | Text search             |
-| `limit` | number | No       | Max results (default 20)|
+| Param   | Type   | Required | Description              |
+| ------- | ------ | -------- | ------------------------ |
+| `query` | string | ✓        | Text search              |
+| `limit` | number | No       | Max results (default 20) |
 
 ```http
 GET /api/v1/stations/search?query=wynyard&limit=5
@@ -546,6 +599,7 @@ X-API-Key: nsw_xxx
 ```
 
 **Response** `200`
+
 ```json
 [
   {
@@ -582,12 +636,12 @@ X-API-Key: nsw_xxx
 
 Find stations within a radius.
 
-| Param    | Type   | Required | Description                    |
-|----------|--------|----------|--------------------------------|
-| `lat`    | number | ✓        | Latitude                       |
-| `lon`    | number | ✓        | Longitude                      |
-| `radius` | number | No       | Metres (default 500)           |
-| `limit`  | number | No       | Max results (default 20)       |
+| Param    | Type   | Required | Description              |
+| -------- | ------ | -------- | ------------------------ |
+| `lat`    | number | ✓        | Latitude                 |
+| `lon`    | number | ✓        | Longitude                |
+| `radius` | number | No       | Metres (default 500)     |
+| `limit`  | number | No       | Max results (default 20) |
 
 ```http
 GET /api/v1/stations/nearby?lat=-33.866&lon=151.205&radius=400
@@ -608,9 +662,17 @@ X-API-Key: nsw_xxx
 ```
 
 **Response** `200`
+
 ```json
 [
-  { "routeId": "M1", "routeShortName": "M1", "routeLongName": "Tallawong to Sydenham", "routeType": 1, "routeColor": "009B77", "mode": "metro" }
+  {
+    "routeId": "M1",
+    "routeShortName": "M1",
+    "routeLongName": "Tallawong to Sydenham",
+    "routeType": 1,
+    "routeColor": "009B77",
+    "mode": "metro"
+  }
 ]
 ```
 
@@ -649,6 +711,7 @@ X-API-Key: nsw_xxx
 ```
 
 **Response** `200`
+
 ```json
 [
   { "mode": "sydneytrains", "success": true },
@@ -671,11 +734,11 @@ All errors follow this shape:
 }
 ```
 
-| Status | Meaning                                  |
-|--------|------------------------------------------|
-| `400`  | Bad request / validation error           |
-| `401`  | Missing or invalid API key               |
-| `404`  | Resource not found                       |
-| `429`  | Rate limit exceeded (120 req/min)        |
-| `500`  | NSW API error or internal server error   |
-| `503`  | NSW API unavailable (upstream 503/504)   |
+| Status | Meaning                                |
+| ------ | -------------------------------------- |
+| `400`  | Bad request / validation error         |
+| `401`  | Missing or invalid API key             |
+| `404`  | Resource not found                     |
+| `429`  | Rate limit exceeded (120 req/min)      |
+| `500`  | NSW API error or internal server error |
+| `503`  | NSW API unavailable (upstream 503/504) |

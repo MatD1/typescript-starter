@@ -47,7 +47,7 @@ export class RealtimeController {
   constructor(
     private readonly realtimeService: RealtimeService,
     private readonly vehicleStream: VehicleStreamService,
-  ) { }
+  ) {}
 
   // ─── Headway ─────────────────────────────────────────────────────────────
 
@@ -86,7 +86,9 @@ export class RealtimeController {
       'An initial snapshot is delivered immediately on connection. ' +
       'Connect with `EventSource` or `curl -N`. Each event `data` field is a JSON array of `VehiclePosition` objects.',
   })
-  @ApiOkResponse({ description: 'text/event-stream of VehiclePosition JSON arrays' })
+  @ApiOkResponse({
+    description: 'text/event-stream of VehiclePosition JSON arrays',
+  })
   async streamAllVehicles(): Promise<Observable<MessageEvent>> {
     const snapshot = await this.realtimeService.getVehiclePositions();
     const emitter = this.vehicleStream.getEmitter('all');
@@ -113,7 +115,10 @@ export class RealtimeController {
     enum: TransportModeEnum,
     description: 'Transport mode to stream (e.g. sydneytrains, buses)',
   })
-  @ApiOkResponse({ description: 'text/event-stream of VehiclePosition JSON arrays for the specified mode' })
+  @ApiOkResponse({
+    description:
+      'text/event-stream of VehiclePosition JSON arrays for the specified mode',
+  })
   async streamModeVehicles(
     @Param('mode', new ParseEnumPipe(TransportModeEnum)) mode: TransportMode,
   ): Promise<Observable<MessageEvent>> {
@@ -193,7 +198,8 @@ export class RealtimeController {
   @ApiQuery({
     name: 'tripId',
     required: true,
-    description: 'GTFS trip ID, obtained from the `tripId` field of a `/trip-planner/trip` journey leg',
+    description:
+      'GTFS trip ID, obtained from the `tripId` field of a `/trip-planner/trip` journey leg',
   })
   @ApiQuery({
     name: 'mode',
@@ -201,14 +207,32 @@ export class RealtimeController {
     enum: TRANSPORT_MODES,
     description: 'Transport mode hint — improves response time but is optional',
   })
-  @ApiOkResponse({ type: TrackedTripSwagger, description: 'Live trip tracking result' })
-  @ApiNotFoundResponse({ description: 'Trip not found — vehicle may not have started yet' })
+  @ApiQuery({ name: 'scheduledTripId', required: false })
+  @ApiQuery({ name: 'routeId', required: false })
+  @ApiQuery({ name: 'startDate', required: false, example: '20260713' })
+  @ApiQuery({ name: 'startTime', required: false, example: '18:43:00' })
+  @ApiOkResponse({
+    type: TrackedTripSwagger,
+    description: 'Live trip tracking result',
+  })
+  @ApiNotFoundResponse({
+    description: 'Trip not found — vehicle may not have started yet',
+  })
   async trackTrip(
     @Query('tripId') tripId: string,
     @Query('mode', new ParseEnumPipe(TransportModeEnum, { optional: true }))
     mode?: TransportMode,
+    @Query('scheduledTripId') scheduledTripId?: string,
+    @Query('routeId') routeId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('startTime') startTime?: string,
   ) {
-    const result = await this.realtimeService.trackTrip(tripId, mode);
+    const result = await this.realtimeService.trackTrip(tripId, mode, {
+      scheduledTripId,
+      routeId,
+      startDate,
+      startTime,
+    });
     if (!result) {
       throw new NotFoundException(
         `Trip ${tripId} is not currently active. The vehicle may not have departed yet.`,

@@ -50,7 +50,7 @@ export class GtfsStaticService {
     private readonly httpService: HttpService,
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly cache: CacheService,
-  ) { }
+  ) {}
 
   async ingestAll(): Promise<
     { mode: string; success: boolean; error?: string }[]
@@ -332,10 +332,7 @@ export class GtfsStaticService {
         dropOffType: r['drop_off_type'] ? parseInt(r['drop_off_type']) : null,
         mode,
       }));
-      await this.db
-        .insert(gtfsStopTime)
-        .values(batch)
-        .onConflictDoNothing();
+      await this.db.insert(gtfsStopTime).values(batch).onConflictDoNothing();
     }
     this.logger.debug(`Ingested ${records.length} stop_times for ${mode}`);
   }
@@ -350,9 +347,9 @@ export class GtfsStaticService {
   > {
     const cacheKey = 'gtfs:route_metadata';
     const cached =
-      await this.cache.get<Record<string, { lineCode: string; routeColour?: string }>>(
-        cacheKey,
-      );
+      await this.cache.get<
+        Record<string, { lineCode: string; routeColour?: string }>
+      >(cacheKey);
     if (cached) return new Map(Object.entries(cached));
 
     const rows = await this.db
@@ -385,14 +382,20 @@ export class GtfsStaticService {
   /**
    * Fetches specific route metadata efficiently for GraphQL DataLoaders.
    */
-  async getRouteMetadataByTripIds(
-    tripIds: string[],
-  ): Promise<{ tripId: string; lineCode?: string; routeColour?: string }[]> {
+  async getRouteMetadataByTripIds(tripIds: string[]): Promise<
+    {
+      tripId: string;
+      routeId?: string;
+      lineCode?: string;
+      routeColour?: string;
+    }[]
+  > {
     if (!tripIds.length) return [];
 
     const rows = await this.db
       .select({
         tripId: gtfsTrip.tripId,
+        routeId: gtfsTrip.routeId,
         lineCode: gtfsRoute.routeShortName,
         routeColour: gtfsRoute.routeColor,
       })
@@ -402,6 +405,7 @@ export class GtfsStaticService {
 
     return rows.map((r) => ({
       tripId: r.tripId,
+      routeId: r.routeId ?? undefined,
       lineCode: r.lineCode ?? undefined,
       routeColour: r.routeColour ?? undefined,
     }));
@@ -420,10 +424,7 @@ export class GtfsStaticService {
       .select({ routeId: gtfsRoute.routeId })
       .from(gtfsRoute)
       .where(
-        inArray(
-          gtfsRoute.routeShortName,
-          [...INTERCITY_ROUTE_SHORT_NAMES],
-        ),
+        inArray(gtfsRoute.routeShortName, [...INTERCITY_ROUTE_SHORT_NAMES]),
       );
 
     const ids = rows.map((r) => r.routeId).filter(Boolean);
@@ -443,9 +444,7 @@ export class GtfsStaticService {
       mode
         ? baseQuery.where(eq(gtfsRoute.mode, mode)).limit(limit).offset(offset)
         : baseQuery.limit(limit).offset(offset),
-      mode
-        ? countQuery.where(eq(gtfsRoute.mode, mode))
-        : countQuery,
+      mode ? countQuery.where(eq(gtfsRoute.mode, mode)) : countQuery,
     ]);
 
     const total = countResult[0]?.total ?? 0;
@@ -464,9 +463,7 @@ export class GtfsStaticService {
       mode
         ? baseQuery.where(eq(gtfsStop.mode, mode)).limit(limit).offset(offset)
         : baseQuery.limit(limit).offset(offset),
-      mode
-        ? countQuery.where(eq(gtfsStop.mode, mode))
-        : countQuery,
+      mode ? countQuery.where(eq(gtfsStop.mode, mode)) : countQuery,
     ]);
 
     const total = countResult[0]?.total ?? 0;
@@ -483,11 +480,12 @@ export class GtfsStaticService {
 
     const [data, countResult] = await Promise.all([
       routeId
-        ? baseQuery.where(eq(gtfsTrip.routeId, routeId)).limit(limit).offset(offset)
+        ? baseQuery
+            .where(eq(gtfsTrip.routeId, routeId))
+            .limit(limit)
+            .offset(offset)
         : baseQuery.limit(limit).offset(offset),
-      routeId
-        ? countQuery.where(eq(gtfsTrip.routeId, routeId))
-        : countQuery,
+      routeId ? countQuery.where(eq(gtfsTrip.routeId, routeId)) : countQuery,
     ]);
 
     const total = countResult[0]?.total ?? 0;
@@ -513,9 +511,7 @@ export class GtfsStaticService {
       filterClause
         ? baseQuery.where(filterClause).limit(limit).offset(offset)
         : baseQuery.limit(limit).offset(offset),
-      filterClause
-        ? countQuery.where(filterClause)
-        : countQuery,
+      filterClause ? countQuery.where(filterClause) : countQuery,
     ]);
 
     const total = countResult[0]?.total ?? 0;
@@ -558,7 +554,9 @@ export class GtfsStaticService {
    * It should be called after GTFS static data has been updated.
    */
   async refreshStopRoutesMapping(mode?: string): Promise<void> {
-    this.logger.log(`Refreshing stop-routes mapping${mode ? ` for mode: ${mode}` : ''}...`);
+    this.logger.log(
+      `Refreshing stop-routes mapping${mode ? ` for mode: ${mode}` : ''}...`,
+    );
 
     // We use a raw SQL approach for efficiency here as Drizzle's INSERT INTO ... SELECT
     // can be more concisely expressed this way for complex DISTINCT joins.

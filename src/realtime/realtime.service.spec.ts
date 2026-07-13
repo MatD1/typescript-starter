@@ -3,7 +3,10 @@ import { RealtimeService } from './realtime.service';
 import { GtfsRealtimeService } from '../transport/gtfs-realtime.service';
 import { GtfsStaticService } from '../gtfs-static/gtfs-static.service';
 import { CacheService } from '../cache/cache.service';
-import type { VehiclePosition, TripUpdate } from '../transport/nsw-gtfs-rt.types';
+import type {
+  VehiclePosition,
+  TripUpdate,
+} from '../transport/nsw-gtfs-rt.types';
 
 const baseVehicle: VehiclePosition = {
   vehicleId: 'V1',
@@ -23,9 +26,11 @@ const mockGtfsRt = {
 
 const mockGtfsStatic = {
   getIntercityRouteIds: jest.fn().mockResolvedValue(new Set<string>()),
-  getRouteMetadataMap: jest.fn().mockResolvedValue(
-    new Map<string, { lineCode: string; routeColour?: string }>(),
-  ),
+  getRouteMetadataMap: jest
+    .fn()
+    .mockResolvedValue(
+      new Map<string, { lineCode: string; routeColour?: string }>(),
+    ),
 };
 
 /** Passthrough cache — always calls the factory and returns its value */
@@ -112,7 +117,9 @@ describe('RealtimeService', () => {
 
       const results = await service.getVehiclePositions('intercity');
 
-      expect(mockGtfsRt.getVehiclePositions).toHaveBeenCalledWith('sydneytrains');
+      expect(mockGtfsRt.getVehiclePositions).toHaveBeenCalledWith(
+        'sydneytrains',
+      );
       expect(results).toHaveLength(1);
       expect(results[0].routeId).toBe('BMT_1');
       expect(results[0].mode).toBe('intercity');
@@ -126,7 +133,13 @@ describe('RealtimeService', () => {
         trackDirection: 'UP',
         vehicleModel: 'Waratah A',
         airConditioned: true,
-        consist: [{ positionInConsist: 1, occupancyStatus: 'EMPTY', quietCarriage: true }],
+        consist: [
+          {
+            positionInConsist: 1,
+            occupancyStatus: 'EMPTY',
+            quietCarriage: true,
+          },
+        ],
       };
       mockGtfsRt.getVehiclePositions.mockResolvedValue([vehicleWithExtensions]);
 
@@ -221,7 +234,13 @@ describe('RealtimeService', () => {
       vehicleModel: 'Waratah A',
       airConditioned: true,
       wheelchairAccessible: 1,
-      consist: [{ positionInConsist: 1, occupancyStatus: 'EMPTY', quietCarriage: false }],
+      consist: [
+        {
+          positionInConsist: 1,
+          occupancyStatus: 'EMPTY',
+          quietCarriage: false,
+        },
+      ],
     };
 
     const tripUpdateForTrip: TripUpdate = {
@@ -327,6 +346,54 @@ describe('RealtimeService', () => {
       expect(result!.tripId).toBe('TRIP-LIVE');
       expect(result!.position).toBeUndefined();
       expect(result!.delay).toBe(90);
+    });
+
+    it('matches the scheduled trip ID when the planner realtime ID differs', async () => {
+      mockGtfsRt.getVehiclePositions.mockResolvedValue([
+        { ...vehicleForTrip, tripId: 'SCHEDULED-1' },
+      ]);
+      mockGtfsRt.getTripUpdates.mockResolvedValue([]);
+
+      const result = await service.trackTrip('REALTIME-1', 'sydneytrains', {
+        scheduledTripId: 'SCHEDULED-1',
+      });
+
+      expect(result?.tripId).toBe('SCHEDULED-1');
+      expect(result?.position).toBeDefined();
+    });
+
+    it('matches a service by route and start fields when IDs differ', async () => {
+      mockGtfsRt.getVehiclePositions.mockResolvedValue([
+        {
+          ...vehicleForTrip,
+          tripId: 'FEED-ID',
+          routeId: 'CCN_1',
+          startDate: '20260714',
+          startTime: '09:00:00',
+        },
+      ]);
+      mockGtfsRt.getTripUpdates.mockResolvedValue([]);
+
+      const result = await service.trackTrip('PLANNER-ID', 'sydneytrains', {
+        routeId: 'CCN_1',
+        startDate: '20260714',
+        startTime: '09:00:00',
+      });
+
+      expect(result?.tripId).toBe('FEED-ID');
+    });
+
+    it('uses mode and reference fields in the tracking cache key', async () => {
+      mockGtfsRt.getVehiclePositions.mockResolvedValue([]);
+      mockGtfsRt.getTripUpdates.mockResolvedValue([]);
+
+      await service.trackTrip('TRIP', 'metro', {
+        scheduledTripId: 'SCHEDULED',
+      });
+
+      expect(mockCacheService.get).toHaveBeenCalledWith(
+        expect.stringContaining('realtime:track:metro:TRIP:SCHEDULED'),
+      );
     });
 
     it('searches all modes when no mode hint is provided', async () => {

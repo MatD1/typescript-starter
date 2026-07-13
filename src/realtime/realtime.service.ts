@@ -35,11 +35,9 @@ export class RealtimeService {
     private readonly gtfsRt: GtfsRealtimeService,
     private readonly cache: CacheService,
     private readonly gtfsStaticService: GtfsStaticService,
-  ) { }
+  ) {}
 
-  async getHeadwayGroups(
-    mode?: TransportMode,
-  ): Promise<RouteHeadwayObject[]> {
+  async getHeadwayGroups(mode?: TransportMode): Promise<RouteHeadwayObject[]> {
     const vehicles = await this.getVehiclePositions(mode);
 
     // 1. Group by routeId + directionId
@@ -131,9 +129,9 @@ export class RealtimeService {
     const a =
       Math.sin(dLat / 2) * Math.sin(dLat / 2) +
       Math.cos(lat1 * (Math.PI / 180)) *
-      Math.cos(lat2 * (Math.PI / 180)) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
+        Math.cos(lat2 * (Math.PI / 180)) *
+        Math.sin(dLon / 2) *
+        Math.sin(dLon / 2);
     return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
@@ -177,7 +175,7 @@ export class RealtimeService {
   > {
     const cacheKey = 'realtime:vehicles:intercity';
     const cached = await this.cache.get<WithMode<VehiclePosition>[]>(cacheKey);
-    const filtered = cached ?? await this.fetchIntercityVehiclePositions();
+    const filtered = cached ?? (await this.fetchIntercityVehiclePositions());
     if (!cached) {
       await this.cache.set(cacheKey, filtered, CacheTTL.VEHICLE_POSITIONS);
     }
@@ -233,7 +231,7 @@ export class RealtimeService {
   > {
     const cacheKey = 'realtime:tripupdates:intercity';
     const cached = await this.cache.get<WithMode<TripUpdate>[]>(cacheKey);
-    const filtered = cached ?? await this.fetchIntercityTripUpdates();
+    const filtered = cached ?? (await this.fetchIntercityTripUpdates());
     if (!cached) {
       await this.cache.set(cacheKey, filtered, CacheTTL.TRIP_UPDATES);
     }
@@ -258,8 +256,7 @@ export class RealtimeService {
   private async enrichWithRouteMetadata<T extends { routeId?: string }>(
     items: T[],
   ): Promise<(T & { lineCode?: string; routeColour?: string })[]> {
-    const routeMap =
-      await this.gtfsStaticService.getRouteMetadataMap();
+    const routeMap = await this.gtfsStaticService.getRouteMetadataMap();
     return items.map((item) => {
       const meta = item.routeId ? routeMap.get(item.routeId) : undefined;
       return {
@@ -284,8 +281,14 @@ export class RealtimeService {
   async trackTrip(
     tripId: string,
     mode?: TransportMode,
+    reference: {
+      scheduledTripId?: string;
+      routeId?: string;
+      startDate?: string;
+      startTime?: string;
+    } = {},
   ): Promise<TrackedTripObject | null> {
-    const cacheKey = `realtime:track:${tripId}`;
+    const cacheKey = `realtime:track:${mode ?? 'all'}:${tripId}:${reference.scheduledTripId ?? ''}:${reference.routeId ?? ''}:${reference.startDate ?? ''}:${reference.startTime ?? ''}`;
     const cached = await this.cache.get<TrackedTripObject | null>(cacheKey);
     if (cached !== undefined && cached !== null) return cached;
 
@@ -297,35 +300,52 @@ export class RealtimeService {
         m === 'intercity'
           ? this.getIntercityVehiclePositions()
           : this.cache.getOrSet(
-            `realtime:vehicles:${m}`,
-            () => this.gtfsRt.getVehiclePositions(m),
-            CacheTTL.VEHICLE_POSITIONS,
-          ),
+              `realtime:vehicles:${m}`,
+              () => this.gtfsRt.getVehiclePositions(m),
+              CacheTTL.VEHICLE_POSITIONS,
+            ),
         m === 'intercity'
           ? this.getIntercityTripUpdates()
           : this.cache.getOrSet(
-            `realtime:tripupdates:${m}`,
-            () => this.gtfsRt.getTripUpdates(m),
-            CacheTTL.TRIP_UPDATES,
-          ),
+              `realtime:tripupdates:${m}`,
+              () => this.gtfsRt.getTripUpdates(m),
+              CacheTTL.TRIP_UPDATES,
+            ),
       ]);
 
-      const vehicleList =
-        vehicles.status === 'fulfilled' ? vehicles.value : [];
+      const vehicleList = vehicles.status === 'fulfilled' ? vehicles.value : [];
       const updateList = updates.status === 'fulfilled' ? updates.value : [];
 
-      const vehicle = vehicleList.find((v) => v.tripId === tripId);
-      const tripUpdate = updateList.find((t) => t.tripId === tripId);
+      const candidateIds = new Set(
+        [tripId, reference.scheduledTripId].filter((id): id is string =>
+          Boolean(id),
+        ),
+      );
+      const matchesReference = (item: {
+        tripId?: string;
+        routeId?: string;
+        startDate?: string;
+        startTime?: string;
+      }) =>
+        (item.tripId != null && candidateIds.has(item.tripId)) ||
+        (reference.routeId != null &&
+          item.routeId === reference.routeId &&
+          (reference.startDate == null ||
+            item.startDate === reference.startDate) &&
+          (reference.startTime == null ||
+            item.startTime === reference.startTime));
+
+      const vehicle = vehicleList.find(matchesReference);
+      const tripUpdate = updateList.find(matchesReference);
 
       if (!vehicle && !tripUpdate) continue;
 
       const routeId = vehicle?.routeId ?? tripUpdate?.routeId;
-      const routeMap =
-        await this.gtfsStaticService.getRouteMetadataMap();
+      const routeMap = await this.gtfsStaticService.getRouteMetadataMap();
       const meta = routeId ? routeMap.get(routeId) : undefined;
 
       const result: TrackedTripObject = {
-        tripId,
+        tripId: vehicle?.tripId ?? tripUpdate?.tripId ?? tripId,
         routeId,
         lineCode: meta?.lineCode,
         routeColour: meta?.routeColour,
@@ -333,25 +353,24 @@ export class RealtimeService {
         vehicleLabel: vehicle?.vehicleLabel ?? tripUpdate?.vehicleLabel,
         mode: m,
         scheduleRelationship:
-          tripUpdate?.scheduleRelationship ??
-          vehicle?.tripScheduleRelationship,
+          tripUpdate?.scheduleRelationship ?? vehicle?.tripScheduleRelationship,
         delay: tripUpdate?.delay,
 
         // Live position — present only when vehiclepos feed has this trip
         position: vehicle
           ? {
-            latitude: vehicle.latitude,
-            longitude: vehicle.longitude,
-            bearing: vehicle.bearing,
-            speed: vehicle.speed,
-            currentStatus: vehicle.currentStatus,
-            currentStopId: vehicle.currentStopId,
-            currentStopSequence: vehicle.currentStopSequence,
-            occupancyStatus: vehicle.occupancyStatus,
-            trackDirection: vehicle.trackDirection,
-            timestamp: vehicle.timestamp,
-            consist: vehicle.consist,
-          }
+              latitude: vehicle.latitude,
+              longitude: vehicle.longitude,
+              bearing: vehicle.bearing,
+              speed: vehicle.speed,
+              currentStatus: vehicle.currentStatus,
+              currentStopId: vehicle.currentStopId,
+              currentStopSequence: vehicle.currentStopSequence,
+              occupancyStatus: vehicle.occupancyStatus,
+              trackDirection: vehicle.trackDirection,
+              timestamp: vehicle.timestamp,
+              consist: vehicle.consist,
+            }
           : undefined,
 
         stopTimeUpdates: tripUpdate?.stopTimeUpdates?.map((s) => ({

@@ -13,6 +13,7 @@ import {
   StopObject,
   DepartureObject,
   LegObject,
+  ServiceReferenceObject,
 } from './dto/trip-planner.objects';
 import { RouteMetadataDataLoader } from '../gtfs-static/gtfs-route.dataloader';
 import { StopFinderTypeEnum } from '../transport/transport.types';
@@ -116,6 +117,20 @@ export class TripPlannerResolver {
       radius_1: radius ?? 500,
       type_1: 'BUS_POINT',
     });
+  }
+}
+
+@Resolver(() => ServiceReferenceObject)
+export class ServiceReferenceResolver {
+  constructor(private readonly dataLoader: RouteMetadataDataLoader) {}
+
+  @ResolveField(() => String, { nullable: true })
+  async routeId(@Parent() reference: ServiceReferenceObject) {
+    if (reference.routeId) return reference.routeId;
+    const tripId = reference.realtimeTripId ?? reference.scheduledTripId;
+    if (!tripId) return null;
+    const meta = await this.dataLoader.loader.load(tripId);
+    return meta?.routeId ?? null;
   }
 }
 

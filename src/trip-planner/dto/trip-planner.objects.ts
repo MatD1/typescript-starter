@@ -25,10 +25,47 @@ export class LocationObject {
 }
 
 @ObjectType()
+export class ServiceReferenceObject {
+  @ApiPropertyOptional()
+  @Field({ nullable: true })
+  realtimeTripId?: string;
+
+  @ApiPropertyOptional()
+  @Field({ nullable: true })
+  scheduledTripId?: string;
+
+  @ApiPropertyOptional()
+  @Field({ nullable: true })
+  routeId?: string;
+
+  @ApiPropertyOptional()
+  @Field({ nullable: true })
+  mode?: string;
+
+  @ApiPropertyOptional()
+  @Field(() => Int, { nullable: true })
+  directionId?: number;
+
+  @ApiPropertyOptional({ description: 'GTFS service date in yyyyMMdd format' })
+  @Field({ nullable: true })
+  startDate?: string;
+
+  @ApiPropertyOptional({
+    description: 'Scheduled service time in HH:mm:ss format',
+  })
+  @Field({ nullable: true })
+  startTime?: string;
+}
+
+@ObjectType()
 export class LegObject {
   @ApiPropertyOptional()
   @Field({ nullable: true })
   tripId?: string;
+
+  @ApiPropertyOptional({ type: () => ServiceReferenceObject })
+  @Field(() => ServiceReferenceObject, { nullable: true })
+  serviceRef?: ServiceReferenceObject;
 
   @ApiPropertyOptional()
   @Field({ nullable: true })
@@ -81,7 +118,9 @@ export class LegObject {
     nullable: true,
     description: 'Route colour hex from GTFS (e.g. 009B77)',
   })
-  @ApiPropertyOptional({ description: 'Route colour hex from GTFS (e.g. 009B77)' })
+  @ApiPropertyOptional({
+    description: 'Route colour hex from GTFS (e.g. 009B77)',
+  })
   routeColour?: string;
 }
 
@@ -109,6 +148,24 @@ export class TripPlannerResponseObject {
   @ApiPropertyOptional()
   @Field({ nullable: true })
   context?: string;
+
+  @ApiProperty({ enum: ['depart', 'arrive'] })
+  @Field()
+  searchMode!: string;
+
+  @ApiProperty({
+    description: 'Requested Sydney-local boundary in yyyyMMddHHmm format',
+  })
+  @Field()
+  requestedDateTime!: string;
+
+  @ApiProperty({ description: 'Time this response was generated' })
+  @Field()
+  generatedAt!: string;
+
+  @ApiProperty({ example: 'Australia/Sydney' })
+  @Field()
+  timezone!: string;
 }
 
 @ObjectType()
@@ -190,6 +247,8 @@ export class DepartureObject {
     nullable: true,
     description: 'Route colour hex from GTFS (e.g. 009B77)',
   })
-  @ApiPropertyOptional({ description: 'Route colour hex from GTFS (e.g. 009B77)' })
+  @ApiPropertyOptional({
+    description: 'Route colour hex from GTFS (e.g. 009B77)',
+  })
   routeColour?: string;
 }

@@ -15,7 +15,7 @@ export class RealtimeResolver {
     private readonly realtimeService: RealtimeService,
     private readonly pollerService: RealtimePollerService,
     @Inject(PUB_SUB) private readonly pubSub: RedisPubSub,
-  ) { }
+  ) {}
 
   @Query(() => [VehiclePositionObject], {
     description:
@@ -39,6 +39,7 @@ export class RealtimeResolver {
   }
 
   @Query(() => TrackedTripObject, {
+    name: 'trackTrip',
     nullable: true,
     description:
       'Track a specific trip live. Returns vehicle position, delays, stop-time ' +
@@ -47,7 +48,10 @@ export class RealtimeResolver {
       'Pass the `tripId` field from a planned journey leg (planTrip query).',
   })
   trackTripQuery(
-    @Args('tripId', { type: () => String, description: 'GTFS trip ID from a planned leg' })
+    @Args('tripId', {
+      type: () => String,
+      description: 'GTFS trip ID from a planned leg',
+    })
     tripId: string,
     @Args('mode', {
       type: () => TransportModeEnum,
@@ -55,21 +59,37 @@ export class RealtimeResolver {
       description: 'Optional mode hint — improves lookup speed',
     })
     mode?: TransportModeEnum,
+    @Args('scheduledTripId', { type: () => String, nullable: true })
+    scheduledTripId?: string,
+    @Args('routeId', { type: () => String, nullable: true }) routeId?: string,
+    @Args('startDate', { type: () => String, nullable: true })
+    startDate?: string,
+    @Args('startTime', { type: () => String, nullable: true })
+    startTime?: string,
   ) {
-    return this.realtimeService.trackTrip(tripId, mode);
+    return this.realtimeService.trackTrip(tripId, mode, {
+      scheduledTripId,
+      routeId,
+      startDate,
+      startTime,
+    });
   }
 
   @Subscription(() => TrackedTripObject, {
     resolve: (payload) => payload.trackTrip,
-    description: 'Listen to live updates for a specific trip over a WebSocket connection.',
+    description:
+      'Listen to live updates for a specific trip over a WebSocket connection.',
   })
   trackTrip(
     @Args('tripId', { type: () => String }) tripId: string,
-    @Args('mode', { type: () => TransportModeEnum, nullable: true }) mode?: TransportModeEnum,
+    @Args('mode', { type: () => TransportModeEnum, nullable: true })
+    mode?: TransportModeEnum,
   ) {
     this.pollerService.addTrip(tripId, mode);
 
-    const iterator = this.pubSub.asyncIterableIterator<any>(`trackTrip:${tripId}`);
+    const iterator = this.pubSub.asyncIterableIterator<any>(
+      `trackTrip:${tripId}`,
+    );
 
     // Intercept AsyncIterator return to handle unsubscribe event
     const origReturn = iterator.return?.bind(iterator);

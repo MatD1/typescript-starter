@@ -119,5 +119,105 @@ describe('TripPlannerService.findStops validation', () => {
     });
 
     expect(response.context).toBeUndefined();
+    expect(response.searchMode).toBe('arrive');
+    expect(response.requestedDateTime).toBe('202607140900');
+    expect(response.timezone).toBe('Australia/Sydney');
+  });
+
+  it('rejects incomplete or invalid date/time boundaries', async () => {
+    await expect(service.planTrip({ itdDate: '20260714' })).rejects.toThrow(
+      /supplied together/,
+    );
+    await expect(
+      service.planTrip({ itdDate: '20260714', itdTime: '2561' }),
+    ).rejects.toThrow(/HHmm/);
+    expect(mockTransportService.getTripPlan).not.toHaveBeenCalled();
+  });
+
+  it('filters departed journeys and sorts departures from the requested time', async () => {
+    mockTransportService.getTripPlan.mockResolvedValue({
+      journeys: [
+        journey('2026-07-14T08:14:00+10:00', '2026-07-14T08:45:00+10:00'),
+        journey('2026-07-14T09:10:00+10:00', '2026-07-14T09:40:00+10:00'),
+        journey('2026-07-14T09:00:00+10:00', '2026-07-14T09:30:00+10:00'),
+      ],
+    });
+
+    const response = await service.planTrip({
+      itdDate: '20260714',
+      itdTime: '0900',
+    });
+
+    expect(response.trips).toHaveLength(2);
+    expect(response.trips[0].legs[0].departureTimePlanned).toContain('09:00');
+    expect(response.trips[1].legs[0].departureTimePlanned).toContain('09:10');
+  });
+
+  it('filters late arrivals and orders arrive-by journeys closest first', async () => {
+    mockTransportService.getTripPlan.mockResolvedValue({
+      journeys: [
+        journey('2026-07-14T08:00:00+10:00', '2026-07-14T08:40:00+10:00'),
+        journey('2026-07-14T08:10:00+10:00', '2026-07-14T08:55:00+10:00'),
+        journey('2026-07-14T08:20:00+10:00', '2026-07-14T09:05:00+10:00'),
+      ],
+    });
+
+    const response = await service.planTrip({
+      itdDate: '20260714',
+      itdTime: '0900',
+      arriveBy: true,
+    });
+
+    expect(response.trips).toHaveLength(2);
+    expect(response.trips[0].legs[0].arrivalTimePlanned).toContain('08:55');
+    expect(response.trips[1].legs[0].arrivalTimePlanned).toContain('08:40');
+  });
+
+  it('returns a server-derived service reference for live tracking', async () => {
+    mockTransportService.getTripPlan.mockResolvedValue({
+      journeys: [
+        {
+          legs: [
+            {
+              origin: { departureTimePlanned: '2026-07-14T09:00:00+10:00' },
+              destination: { arrivalTimePlanned: '2026-07-14T10:00:00+10:00' },
+              transportation: {
+                id: 'SCHEDULED-1',
+                number: 'CCN',
+                product: { name: 'Train' },
+                properties: { RealtimeTripId: 'REALTIME-1' },
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const response = await service.planTrip({
+      itdDate: '20260714',
+      itdTime: '0900',
+    });
+
+    expect(response.trips[0].legs[0].serviceRef).toEqual(
+      expect.objectContaining({
+        realtimeTripId: 'REALTIME-1',
+        scheduledTripId: 'SCHEDULED-1',
+        mode: 'intercity',
+        startDate: '20260714',
+        startTime: '09:00:00',
+      }),
+    );
   });
 });
+
+function journey(departure: string, arrival: string) {
+  return {
+    legs: [
+      {
+        origin: { departureTimePlanned: departure },
+        destination: { arrivalTimePlanned: arrival },
+        transportation: {},
+      },
+    ],
+  };
+}
