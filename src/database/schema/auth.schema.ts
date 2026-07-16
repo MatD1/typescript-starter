@@ -69,9 +69,6 @@ export const apiKey = pgTable('api_key', {
   start: text('start'),
   prefix: text('prefix'),
   key: text('key').notNull().unique(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
   refillInterval: integer('refill_interval'),
   refillAmount: integer('refill_amount'),
   lastRefillAt: timestamp('last_refill_at'),
@@ -88,5 +85,5 @@ export const apiKey = pgTable('api_key', {
   permissions: text('permissions'),
   metadata: text('metadata'),
   configId: text('config_id'),
-  referenceId: text('reference_id'),
+  referenceId: text('reference_id').references(() => user.id, { onDelete: 'cascade' }),
 });

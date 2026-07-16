@@ -71,6 +71,13 @@
       "when": 1784176062252,
       "tag": "0009_jittery_starhawk",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784177070867,
+      "tag": "0010_burly_quentin_quire",
+      "breakpoints": true
     }
   ]
 }

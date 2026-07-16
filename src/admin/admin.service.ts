@@ -130,7 +130,7 @@ export class AdminService {
       this.db
         .select({ value: count() })
         .from(apiKey)
-        .where(eq(apiKey.userId, id)),
+        .where(eq(apiKey.referenceId, id)),
       this.db
         .select({ value: count() })
         .from(requestLog)
@@ -226,7 +226,7 @@ export class AdminService {
     const offset = (page - 1) * limit;
 
     const conditions: ReturnType<typeof eq>[] = [];
-    if (query.userId) conditions.push(eq(apiKey.userId, query.userId));
+    if (query.userId) conditions.push(eq(apiKey.referenceId, query.userId));
     if (query.enabled !== undefined)
       conditions.push(eq(apiKey.enabled, query.enabled));
 
@@ -752,7 +752,7 @@ export class AdminService {
       id: row.id,
       name: row.name ?? undefined,
       start: row.start ?? undefined,
-      userId: row.userId,
+      userId: row.referenceId ?? '',
       enabled: row.enabled,
       rateLimitEnabled: row.rateLimitEnabled,
       rateLimitMax: row.rateLimitMax ?? undefined,

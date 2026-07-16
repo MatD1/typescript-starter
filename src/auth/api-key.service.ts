@@ -117,17 +117,18 @@ export class ApiKeyService {
         id: apiKey.id,
         name: apiKey.name,
         start: apiKey.start,
-        userId: apiKey.userId,
+        referenceId: apiKey.referenceId,
         enabled: apiKey.enabled,
         createdAt: apiKey.createdAt,
         expiresAt: apiKey.expiresAt,
         permissions: apiKey.permissions,
       })
       .from(apiKey)
-      .where(eq(apiKey.userId, userId));
+      .where(eq(apiKey.referenceId, userId));
 
     return rows.map((r) => ({
       ...r,
+      userId: r.referenceId ?? '',
       // Normalize permissions for the UI
       permissions: r.permissions ? JSON.parse(r.permissions)?.api?.[0] : 'user',
     }));
@@ -142,7 +143,7 @@ export class ApiKeyService {
         id: apiKey.id,
         name: apiKey.name,
         start: apiKey.start,
-        userId: apiKey.userId,
+        referenceId: apiKey.referenceId,
         enabled: apiKey.enabled,
         createdAt: apiKey.createdAt,
         expiresAt: apiKey.expiresAt,
@@ -154,6 +155,7 @@ export class ApiKeyService {
 
     return rows.map((r) => ({
       ...r,
+      userId: r.referenceId ?? '',
       permissions: r.permissions ? JSON.parse(r.permissions)?.api?.[0] : 'user',
     }));
   }
@@ -211,7 +213,7 @@ export class ApiKeyService {
       .limit(1);
 
     if (!rows.length) throw new NotFoundException('API key not found');
-    if (rows[0].userId !== userId) {
+    if (rows[0].referenceId !== userId) {
       throw new BadRequestException('API key does not belong to this user');
     }
 
