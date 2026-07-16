@@ -87,4 +87,5 @@ export const apiKey = pgTable('api_key', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
   permissions: text('permissions'),
   metadata: text('metadata'),
+  configId: text('config_id'),
 });

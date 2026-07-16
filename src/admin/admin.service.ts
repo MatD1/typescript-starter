@@ -33,6 +33,7 @@ import type {
   UpdateUserDto,
   AdminApiKeysQueryDto,
   UpdateApiKeyDto,
+  AdminCreateApiKeyDto,
   AdminLogsQueryDto,
   AdminErrorLogsQueryDto,
   AdminStatsUsageQueryDto,
@@ -208,6 +209,16 @@ export class AdminService {
   }
 
   // ─── API Keys ──────────────────────────────────────────────────────────────
+
+  async createApiKey(adminUserId: string, dto: AdminCreateApiKeyDto) {
+    return this.apiKeyService.createApiKey(
+      adminUserId,
+      dto.name,
+      dto.permissionLevel,
+      dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+    );
+  }
+
 
   async getApiKeys(query: AdminApiKeysQueryDto): Promise<PaginatedApiKeys> {
     const page = query.page ?? 1;

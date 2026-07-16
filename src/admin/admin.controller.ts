@@ -41,6 +41,7 @@ import {
   UpdateUserDto,
   AdminApiKeysQueryDto,
   UpdateApiKeyDto,
+  AdminCreateApiKeyDto,
   AdminLogsQueryDto,
   AdminErrorLogsQueryDto,
   AdminStatsUsageQueryDto,
@@ -204,6 +205,18 @@ export class AdminController {
   }
 
   // ─── API Keys ─────────────────────────────────────────────────────────────
+
+  @Post('api-keys')
+  @ApiOperation({
+    summary: 'Create a new API key (Admin)',
+    description: 'Creates a new API key with the requested permissions. Admin only.',
+  })
+  @ApiBody({ type: AdminCreateApiKeyDto })
+  @ApiCreatedResponse({ description: 'Newly created API key' })
+  async createApiKey(@Req() req: Request, @Body() dto: AdminCreateApiKeyDto) {
+    const user = (req as any).user;
+    return this.adminService.createApiKey(user?.userId ?? '', dto);
+  }
 
   @Get('api-keys')
   @ApiOperation({

@@ -89,6 +89,24 @@ export class AdminApiKeysQueryDto {
   enabled?: boolean;
 }
 
+export class AdminCreateApiKeyDto {
+  @ApiPropertyOptional({ description: 'A descriptive name for the API key' })
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @ApiPropertyOptional({ description: 'Optional expiration date in ISO 8601 format.' })
+  @IsString()
+  @IsOptional()
+  expiresAt?: string;
+
+  @ApiPropertyOptional({ description: 'Permission level for the key.', enum: ['user', 'admin', 'app-authorised'] })
+  @IsString()
+  @IsOptional()
+  @IsIn(['user', 'admin', 'app-authorised'])
+  permissionLevel?: string;
+}
+
 export class UpdateApiKeyDto {
   @ApiPropertyOptional({ description: 'Whether the API key is enabled' })
   @IsOptional()
