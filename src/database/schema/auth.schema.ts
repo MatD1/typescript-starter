@@ -88,4 +88,5 @@ export const apiKey = pgTable('api_key', {
   permissions: text('permissions'),
   metadata: text('metadata'),
   configId: text('config_id'),
+  referenceId: text('reference_id'),
 });
