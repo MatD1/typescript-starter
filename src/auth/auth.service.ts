@@ -42,6 +42,7 @@ export class AuthService implements OnModuleInit {
 
       plugins: [
         apiKey({
+          defaultPrefix: 'nsw_',
           permissions: {
             defaultPermissions: {
               api: ['user'],
@@ -49,7 +50,9 @@ export class AuthService implements OnModuleInit {
           },
           // Enable default rate limiting for robust security against abuse
           rateLimit: {
-            enabled: true,
+            enabled:
+              process.env.NODE_ENV !== 'development' &&
+              process.env.DISABLE_THROTTLER !== 'true',
             maxRequests: 100,
             timeWindow: 60000, // 1 minute
           },

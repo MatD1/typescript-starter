@@ -15,6 +15,12 @@ export class GqlThrottlerGuard extends ThrottlerGuard {
   protected override async shouldSkip(
     context: ExecutionContext,
   ): Promise<boolean> {
+    if (
+      process.env.NODE_ENV === 'development' ||
+      process.env.DISABLE_THROTTLER === 'true'
+    ) {
+      return true;
+    }
     // Lazy-initialize the skip list from process.env
     if (this.skipIps === null) {
       const raw = process.env.THROTTLE_SKIP_IPS ?? '';

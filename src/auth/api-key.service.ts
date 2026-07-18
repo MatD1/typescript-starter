@@ -59,6 +59,7 @@ export class ApiKeyService {
       body: {
         userId,
         name: name ?? 'Default Key',
+        prefix: 'nsw_',
         permissions: permissions ? { api: [permissions] } : { api: ['user'] },
         expiresAt: expiresAt?.toISOString(),
         rateLimitEnabled,
@@ -250,7 +251,19 @@ export class ApiKeyService {
 
     if (!rows.length) return null;
     const s = rows[0];
-    if (s.expiresAt < new Date()) return null;
+    
+    // Normalize expiresAt to a timezone-independent UTC timestamp
+    const expiresTime = Date.UTC(
+      s.expiresAt.getFullYear(),
+      s.expiresAt.getMonth(),
+      s.expiresAt.getDate(),
+      s.expiresAt.getHours(),
+      s.expiresAt.getMinutes(),
+      s.expiresAt.getSeconds(),
+      s.expiresAt.getMilliseconds()
+    );
+    
+    if (expiresTime < Date.now()) return null;
 
     const result = { userId: s.userId, role: s.role };
     await this.cache.set(cacheKey, result, SESSION_TTL);

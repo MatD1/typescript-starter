@@ -96,6 +96,7 @@ export interface ServiceAlert {
   informedEntities: Array<{
     agencyId?: string;
     routeId?: string;
+    routeName?: string;
     routeType?: number;
     stopId?: string;
     tripId?: string;

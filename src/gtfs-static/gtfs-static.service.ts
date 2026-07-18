@@ -343,12 +343,12 @@ export class GtfsStaticService {
    * trip updates. Cached 1 hour to avoid per-request DB queries.
    */
   async getRouteMetadataMap(): Promise<
-    Map<string, { lineCode: string; routeColour?: string }>
+    Map<string, { lineCode: string; routeColour?: string; routeName?: string }>
   > {
     const cacheKey = 'gtfs:route_metadata';
     const cached =
       await this.cache.get<
-        Record<string, { lineCode: string; routeColour?: string }>
+        Record<string, { lineCode: string; routeColour?: string; routeName?: string }>
       >(cacheKey);
     if (cached) return new Map(Object.entries(cached));
 
@@ -356,22 +356,25 @@ export class GtfsStaticService {
       .select({
         routeId: gtfsRoute.routeId,
         routeShortName: gtfsRoute.routeShortName,
+        routeLongName: gtfsRoute.routeLongName,
         routeColor: gtfsRoute.routeColor,
       })
       .from(gtfsRoute)
       .where(
         or(
           isNotNull(gtfsRoute.routeShortName),
+          isNotNull(gtfsRoute.routeLongName),
           isNotNull(gtfsRoute.routeColor),
         ),
       );
 
-    const map: Record<string, { lineCode: string; routeColour?: string }> = {};
+    const map: Record<string, { lineCode: string; routeColour?: string; routeName?: string }> = {};
     for (const r of rows) {
-      if (r.routeId && (r.routeShortName || r.routeColor)) {
+      if (r.routeId && (r.routeShortName || r.routeLongName || r.routeColor)) {
         map[r.routeId] = {
           lineCode: r.routeShortName ?? '',
           routeColour: r.routeColor ?? undefined,
+          routeName: r.routeLongName || r.routeShortName || undefined,
         };
       }
     }

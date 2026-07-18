@@ -17,6 +17,9 @@ export class InformedEntityObject {
   @Field({ nullable: true })
   routeId?: string;
 
+  @Field({ nullable: true })
+  routeName?: string;
+
   @Field(() => Int, { nullable: true, description: 'GTFS route_type (0=tram, 1=metro, 2=rail, 3=bus, 4=ferry)' })
   routeType?: number;
 

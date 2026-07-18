@@ -252,11 +252,20 @@ export class SupabaseAuthService {
 
     const oldSession = rows[0];
     const now = new Date();
+    
+    const refreshExpiresTime = oldSession.refreshTokenExpiresAt
+      ? Date.UTC(
+          oldSession.refreshTokenExpiresAt.getFullYear(),
+          oldSession.refreshTokenExpiresAt.getMonth(),
+          oldSession.refreshTokenExpiresAt.getDate(),
+          oldSession.refreshTokenExpiresAt.getHours(),
+          oldSession.refreshTokenExpiresAt.getMinutes(),
+          oldSession.refreshTokenExpiresAt.getSeconds(),
+          oldSession.refreshTokenExpiresAt.getMilliseconds()
+        )
+      : 0;
 
-    if (
-      !oldSession.refreshTokenExpiresAt ||
-      oldSession.refreshTokenExpiresAt < now
-    ) {
+    if (!refreshExpiresTime || refreshExpiresTime < Date.now()) {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 

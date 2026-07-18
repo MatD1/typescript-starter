@@ -50,6 +50,24 @@ export class DisruptionsService {
       );
     }
 
+    const routeMap = await this.gtfsStaticService.getRouteMetadataMap();
+
+    disruptions = disruptions.map((alert) => {
+      if (!alert.informedEntities?.length) return alert;
+      
+      const enrichedEntities = alert.informedEntities.map((ie) => {
+        if (ie.routeId) {
+          const meta = routeMap.get(ie.routeId);
+          if (meta?.routeName) {
+            return { ...ie, routeName: meta.routeName };
+          }
+        }
+        return ie;
+      });
+
+      return { ...alert, informedEntities: enrichedEntities };
+    });
+
     return disruptions;
   }
 
