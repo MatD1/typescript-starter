@@ -99,8 +99,8 @@ export class LinePerformanceDayObject {
   description: 'Per-line network state from the history sampler.',
 })
 export class NetworkSnapshotObject {
-  @Field()
-  capturedAt!: Date;
+  @Field(() => String)
+  capturedAt!: any;
 
   @Field()
   mode!: string;
