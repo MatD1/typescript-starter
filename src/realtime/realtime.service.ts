@@ -378,6 +378,8 @@ export class RealtimeService {
           stopId: s.stopId,
           arrivalDelay: s.arrivalDelay,
           departureDelay: s.departureDelay,
+          arrivalTime: s.arrivalTime,
+          departureTime: s.departureTime,
           scheduleRelationship: s.scheduleRelationship,
           departureOccupancyStatus: s.departureOccupancyStatus,
         })),

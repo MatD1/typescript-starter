@@ -107,11 +107,27 @@ export class HistorySamplerService {
       if (delay > entry.maxDelay) entry.maxDelay = delay;
     }
 
+    // Vehicle position feeds often omit routeId (only tripId is set), which
+    // stranded every vehicle under OTHER while trip updates bucketed into
+    // T1/CCN/… — i.e. "0 active" per line. Resolve through the trip updates'
+    // tripId → routeId mapping first.
+    const tripRoute = new Map<string, string>();
+    for (const tu of tripUpdates) {
+      if (tu.routeId) tripRoute.set(tu.tripId, tu.routeId);
+    }
     for (const vehicle of vehicles) {
-      acc(vehicle.mode, lineFor(vehicle.routeId, vehicle.tripId)).vehicles++;
+      const routeId =
+        vehicle.routeId ??
+        (vehicle.tripId ? tripRoute.get(vehicle.tripId) : undefined);
+      acc(vehicle.mode, lineFor(routeId, vehicle.tripId)).vehicles++;
     }
 
     for (const alert of alerts) {
+      // Only service-affecting alerts count toward disruption minutes —
+      // info-level notices (planned trackwork ads etc.) were racking up
+      // "disrupted" time on lines running at 100% on time.
+      const severity = alert.severityLevel ?? 'UNKNOWN_SEVERITY';
+      if (severity !== 'WARNING' && severity !== 'SEVERE') continue;
       const lines = new Set(
         alert.informedEntities
           .map((entity) => entity.routeId)

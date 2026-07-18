@@ -77,6 +77,20 @@ export class LiveStopTimeUpdateObject {
   @Field(() => Int, { nullable: true, description: 'Departure delay in seconds' })
   departureDelay?: number;
 
+  @ApiPropertyOptional({ description: 'Expected arrival time (epoch seconds)' })
+  @Field(() => Int, {
+    nullable: true,
+    description: 'Expected arrival time (epoch seconds)',
+  })
+  arrivalTime?: number;
+
+  @ApiPropertyOptional({ description: 'Expected departure time (epoch seconds)' })
+  @Field(() => Int, {
+    nullable: true,
+    description: 'Expected departure time (epoch seconds)',
+  })
+  departureTime?: number;
+
   @ApiPropertyOptional()
   @Field({ nullable: true })
   scheduleRelationship?: string;
