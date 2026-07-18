@@ -628,16 +628,26 @@ export class AdminService {
   }
 
   /**
-   * Manual / forceful full-catalog GTFS ingest.
-   * Uses the same pipeline as cron: static API key gate, HEAD/GET, S3, per-feed replace.
+   * Manual GTFS ingest via the static-key + S3 + per-feed pipeline.
    * @param force When true, always re-download from TfNSW (skip Last-Modified short-circuit).
+   * @param feedOrMode Optional feedKey (e.g. `metro`, `buses/GSBC001`) or logical mode
+   *   (e.g. `lightrail`, `buses`). Omit to ingest the full catalog.
    */
-  async triggerGtfsIngest(force = true): Promise<GtfsIngestResult> {
+  async triggerGtfsIngest(
+    force = true,
+    feedOrMode?: string,
+  ): Promise<GtfsIngestResult> {
     try {
+      const target = feedOrMode?.trim() || undefined;
       this.logger.log(
-        `Admin GTFS ingest started (force=${force}, catalog feeds via static key + S3)`,
+        `Admin GTFS ingest started (force=${force}, target=${target ?? 'all'}, static key + S3)`,
       );
-      const results = await this.gtfsStaticService.ingestAll({ force });
+
+      const raw = target
+        ? await this.gtfsStaticService.ingestMode(target, { force })
+        : await this.gtfsStaticService.ingestAll({ force });
+      const results = Array.isArray(raw) ? raw : [raw];
+
       const ok = results.filter((r) => r.success);
       const failed = results.filter((r) => !r.success);
       const modesIngested = [...new Set(ok.map((r) => r.mode))];
@@ -649,7 +659,12 @@ export class AdminService {
       };
     } catch (err) {
       this.logger.error(`GTFS ingest failed: ${String(err)}`);
-      return { success: false, modesIngested: [], feedsIngested: [], failedFeeds: [] };
+      return {
+        success: false,
+        modesIngested: [],
+        feedsIngested: [],
+        failedFeeds: [],
+      };
     }
   }
 

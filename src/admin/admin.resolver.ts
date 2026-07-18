@@ -253,11 +253,18 @@ export class AdminResolver {
       nullable: true,
       defaultValue: true,
       description:
-        'When true (default), re-download all catalog feeds via static key + S3 (skip Last-Modified short-circuit)',
+        'When true (default), re-download via static key + S3 (skip Last-Modified short-circuit)',
     })
     force?: boolean,
+    @Args('feed', {
+      type: () => String,
+      nullable: true,
+      description:
+        'Optional feedKey (e.g. metro, buses/GSBC001) or logical mode (e.g. lightrail). Omit for full catalog.',
+    })
+    feed?: string,
   ): Promise<GtfsIngestResult> {
-    return this.adminService.triggerGtfsIngest(force ?? true);
+    return this.adminService.triggerGtfsIngest(force ?? true, feed);
   }
 
   @Mutation(() => Boolean, { name: 'adminFlushCache' })

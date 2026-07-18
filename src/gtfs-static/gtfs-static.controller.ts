@@ -40,30 +40,39 @@ export class GtfsStaticController {
     summary: 'Trigger GTFS static data ingestion (admin only)',
     description:
       'Manual ingest via the bulletproof pipeline: static API key gate, HEAD/GET, Railway S3, ' +
-      'per-feed transactional replace across the full schedule catalog (~45 feeds). ' +
-      'Pass force=true to always re-download (default for admin full ingest).',
+      'per-feed transactional replace. Pass `mode`/`feed` to target one feed or logical mode; ' +
+      'omit for the full catalog. Defaults to force=true (always re-download); pass force=false to allow Last-Modified skips.',
   })
   @ApiQuery({
     name: 'mode',
     required: false,
     description:
-      'Logical mode (e.g. buses, lightrail) or feedKey (e.g. buses/GSBC001). Omit for all catalog feeds.',
+      'Logical mode (e.g. buses, lightrail) or feedKey (e.g. metro, buses/GSBC001). Alias of `feed`.',
+  })
+  @ApiQuery({
+    name: 'feed',
+    required: false,
+    description:
+      'Same as mode: feedKey or logical mode. Prefer this name for single-feed force ingest.',
   })
   @ApiQuery({
     name: 'force',
     required: false,
     type: Boolean,
     description:
-      'When true, bypass Last-Modified/S3 skip and re-GET from TfNSW',
+      'When true (default), bypass Last-Modified/S3 skip and re-GET from TfNSW. Pass false to allow unchanged skips.',
   })
   ingest(
     @Query('mode') mode?: string,
+    @Query('feed') feed?: string,
     @Query('force') force?: string,
   ) {
-    const options = {
-      force: force === 'true' || force === '1',
-    };
-    if (mode) return this.gtfsStaticService.ingestMode(mode, options);
+    const target = (feed ?? mode)?.trim() || undefined;
+    // Default force=true for both full-catalog and single-feed (matches admin ingest).
+    const forceFlag =
+      force === undefined ? true : force === 'true' || force === '1';
+    const options = { force: forceFlag };
+    if (target) return this.gtfsStaticService.ingestMode(target, options);
     return this.gtfsStaticService.ingestAll(options);
   }
 

@@ -388,26 +388,37 @@ export class AdminController {
   @Post('gtfs/ingest')
   @Throttle({ default: { limit: 1, ttl: 300_000 } })
   @ApiOperation({
-    summary: 'Trigger a full GTFS static data ingest (admin)',
+    summary: 'Trigger GTFS static data ingest (admin)',
     description:
-      'Forceful full-catalog ingest (~45 schedule feeds) via the same pipeline as the nightly job: ' +
-      'dedicated static API key gate, HEAD/GET, Railway S3 ZIP persistence, and per-feed DB replace. ' +
-      'Never uses the invalid consolidated /buses endpoint. ' +
-      'Defaults to force=true (always re-download). Pass force=false to allow Last-Modified skips. ' +
-      'Rate-limited to 1 request per 5 minutes.',
+      'Ingest via the same pipeline as the nightly job: dedicated static API key gate, HEAD/GET, ' +
+      'Railway S3 ZIP persistence, and per-feed DB replace. ' +
+      'Omit `feed` for the full catalog (~45 feeds), or pass a feedKey / logical mode to target one ' +
+      '(e.g. `metro`, `buses/GSBC001`, `lightrail`). ' +
+      'Defaults to force=true (always re-download). Rate-limited to 1 request per 5 minutes.',
+  })
+  @ApiQuery({
+    name: 'feed',
+    required: false,
+    type: String,
+    description:
+      'Optional feedKey (metro, buses/GSBC001, lightrail/parramatta) or logical mode (buses, lightrail, ferries). Omit for all feeds.',
   })
   @ApiQuery({
     name: 'force',
     required: false,
     type: Boolean,
     description:
-      'When true (default), bypass Last-Modified/S3 skip and re-GET every feed from TfNSW',
+      'When true (default), bypass Last-Modified/S3 skip and re-GET from TfNSW',
   })
   @ApiCreatedResponse({ type: GtfsIngestResultSwagger, description: 'Ingest summary with modes/feeds ingested' })
   @ApiTooManyRequestsResponse({ description: 'Rate limit exceeded (1 per 5 minutes)' })
-  triggerGtfsIngest(@Query('force') force?: string) {
-    const forceFlag = force === undefined ? true : force !== 'false' && force !== '0';
-    return this.adminService.triggerGtfsIngest(forceFlag);
+  triggerGtfsIngest(
+    @Query('force') force?: string,
+    @Query('feed') feed?: string,
+  ) {
+    const forceFlag =
+      force === undefined ? true : force !== 'false' && force !== '0';
+    return this.adminService.triggerGtfsIngest(forceFlag, feed);
   }
 
   @Delete('gtfs/cache')

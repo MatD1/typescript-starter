@@ -30,6 +30,15 @@ import {
   isConsolidatedBusesUrl,
   type GtfsScheduleFeed,
 } from './gtfs-schedule.feeds';
+import {
+  csvField,
+  dedupeByKey,
+  formatIngestError,
+  normalizeCsvHeader,
+  parseOptionalFloat,
+  parseOptionalInt,
+  stripUtf8Bom,
+} from './gtfs-ingest.util';
 
 /** NSW intercity lines: Blue Mountains, Central Coast, Hunter, South Coast, Southern Highlands */
 const INTERCITY_ROUTE_SHORT_NAMES = [
@@ -96,7 +105,9 @@ export class GtfsStaticService {
     const failed = results.filter((r) => !r.success);
     if (failed.length > 0) {
       this.logger.warn(
-        `GTFS ingestAll finished with ${failed.length}/${results.length} failures`,
+        `GTFS ingestAll finished with ${failed.length}/${results.length} failures: ${failed
+          .map((f) => `${f.feedKey} (${f.error ?? 'unknown'})`)
+          .join('; ')}`,
       );
     }
     return results;
@@ -203,14 +214,17 @@ export class GtfsStaticService {
         ...counts,
       };
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = formatIngestError(err);
       this.logger.error(`GTFS ingestion failed for ${feedKey}: ${msg}`);
+      if (err instanceof Error && err.stack) {
+        this.logger.debug(err.stack);
+      }
       await this.db
         .update(gtfsIngestFeedRun)
         .set({
           finishedAt: new Date(),
           success: false,
-          error: msg,
+          error: msg.slice(0, 2000),
         })
         .where(eq(gtfsIngestFeedRun.id, runId));
       return { feedKey, mode: logicalMode, success: false, error: msg };
@@ -345,11 +359,16 @@ export class GtfsStaticService {
   private async parseCsvFromZipEntry(
     entry: unzipper.File,
   ): Promise<CsvRecord[]> {
-    const content = await entry.buffer();
+    const content = stripUtf8Bom(await entry.buffer());
     return new Promise((resolve, reject) => {
       parse(
         content,
-        { columns: true, skip_empty_lines: true, trim: true, relax_column_count: true },
+        {
+          columns: (headers: string[]) => headers.map(normalizeCsvHeader),
+          skip_empty_lines: true,
+          trim: true,
+          relax_column_count: true,
+        },
         (err, records: CsvRecord[]) => {
           if (err) reject(err);
           else resolve(records);
@@ -365,11 +384,15 @@ export class GtfsStaticService {
   ): Promise<number> {
     let total = 0;
     let batch: CsvRecord[] = [];
-    const stream = entry.stream() as Readable;
+    // Buffer first so we can strip BOM (entry.stream() may include EF BB BF).
+    // Wrap in an array so the Buffer is emitted as one chunk (TypedArray
+    // iterables would otherwise yield byte-by-byte).
+    const content = stripUtf8Bom(await entry.buffer());
+    const stream = Readable.from([content]);
 
     await new Promise<void>((resolve, reject) => {
       const parser = parse({
-        columns: true,
+        columns: (headers: string[]) => headers.map(normalizeCsvHeader),
         skip_empty_lines: true,
         trim: true,
         relax_column_count: true,
@@ -417,23 +440,31 @@ export class GtfsStaticService {
     const entry = fileMap.get('stops.txt');
     if (!entry) return 0;
     const records = await this.parseCsvFromZipEntry(entry);
-    for (let i = 0; i < records.length; i += BATCH_SIZE) {
-      const batch = records.slice(i, i + BATCH_SIZE).map((r) => ({
-        stopId: r['stop_id'] ?? '',
-        stopCode: r['stop_code'] ?? null,
-        stopName: r['stop_name'] ?? '',
-        stopLat: r['stop_lat'] ? parseFloat(r['stop_lat']) : null,
-        stopLon: r['stop_lon'] ? parseFloat(r['stop_lon']) : null,
-        locationType: r['location_type'] ? parseInt(r['location_type']) : null,
-        parentStation: r['parent_station'] ?? null,
-        wheelchairBoarding: r['wheelchair_boarding']
-          ? parseInt(r['wheelchair_boarding'])
-          : null,
-        platformCode: r['platform_code'] ?? null,
-        mode,
-        feedKey,
-        updatedAt: new Date(),
-      }));
+    const mapped = dedupeByKey(
+      records.map((r) => {
+        const stopId = csvField(r, 'stop_id');
+        return {
+          stopId,
+          stopCode: csvField(r, 'stop_code') || null,
+          stopName: csvField(r, 'stop_name') || stopId || 'Unknown',
+          stopLat: parseOptionalFloat(csvField(r, 'stop_lat')),
+          stopLon: parseOptionalFloat(csvField(r, 'stop_lon')),
+          locationType: parseOptionalInt(csvField(r, 'location_type')),
+          parentStation: csvField(r, 'parent_station') || null,
+          wheelchairBoarding: parseOptionalInt(
+            csvField(r, 'wheelchair_boarding'),
+          ),
+          platformCode: csvField(r, 'platform_code') || null,
+          mode,
+          feedKey,
+          updatedAt: new Date(),
+        };
+      }),
+      (r) => r.stopId,
+    );
+    for (let i = 0; i < mapped.length; i += BATCH_SIZE) {
+      const batch = mapped.slice(i, i + BATCH_SIZE);
+      if (batch.length === 0) continue;
       await this.db
         .insert(gtfsStop)
         .values(batch)
@@ -454,8 +485,17 @@ export class GtfsStaticService {
           },
         });
     }
-    this.logger.debug(`Ingested ${records.length} stops for ${feedKey}`);
-    return records.length;
+    if (records.length > 0 && mapped.length === 0) {
+      const sampleKeys = Object.keys(records[0] ?? {}).slice(0, 8).join(',');
+      throw new Error(
+        `No valid stop_id values in stops.txt for ${feedKey} (${records.length} rows). ` +
+          `CSV headers seen: [${sampleKeys}]. Likely UTF-8 BOM / header mismatch.`,
+      );
+    }
+    this.logger.debug(
+      `Ingested ${mapped.length} stops for ${feedKey} (${records.length} csv rows)`,
+    );
+    return mapped.length;
   }
 
   private async ingestRoutes(
@@ -466,19 +506,24 @@ export class GtfsStaticService {
     const entry = fileMap.get('routes.txt');
     if (!entry) return 0;
     const records = await this.parseCsvFromZipEntry(entry);
-    for (let i = 0; i < records.length; i += BATCH_SIZE) {
-      const batch = records.slice(i, i + BATCH_SIZE).map((r) => ({
-        routeId: r['route_id'] ?? '',
-        agencyId: r['agency_id'] ?? null,
-        routeShortName: r['route_short_name'] ?? null,
-        routeLongName: r['route_long_name'] ?? null,
-        routeType: r['route_type'] ? parseInt(r['route_type']) : null,
-        routeColor: r['route_color'] ?? null,
-        routeTextColor: r['route_text_color'] ?? null,
+    const mapped = dedupeByKey(
+      records.map((r) => ({
+        routeId: csvField(r, 'route_id'),
+        agencyId: csvField(r, 'agency_id') || null,
+        routeShortName: csvField(r, 'route_short_name') || null,
+        routeLongName: csvField(r, 'route_long_name') || null,
+        routeType: parseOptionalInt(csvField(r, 'route_type')),
+        routeColor: csvField(r, 'route_color') || null,
+        routeTextColor: csvField(r, 'route_text_color') || null,
         mode,
         feedKey,
         updatedAt: new Date(),
-      }));
+      })),
+      (r) => r.routeId,
+    );
+    for (let i = 0; i < mapped.length; i += BATCH_SIZE) {
+      const batch = mapped.slice(i, i + BATCH_SIZE);
+      if (batch.length === 0) continue;
       await this.db
         .insert(gtfsRoute)
         .values(batch)
@@ -497,8 +542,10 @@ export class GtfsStaticService {
           },
         });
     }
-    this.logger.debug(`Ingested ${records.length} routes for ${feedKey}`);
-    return records.length;
+    this.logger.debug(
+      `Ingested ${mapped.length} routes for ${feedKey} (${records.length} csv rows)`,
+    );
+    return mapped.length;
   }
 
   private async ingestTrips(
@@ -509,22 +556,27 @@ export class GtfsStaticService {
     const entry = fileMap.get('trips.txt');
     if (!entry) return 0;
     const records = await this.parseCsvFromZipEntry(entry);
-    for (let i = 0; i < records.length; i += BATCH_SIZE) {
-      const batch = records.slice(i, i + BATCH_SIZE).map((r) => ({
-        tripId: r['trip_id'] ?? '',
-        routeId: r['route_id'] ?? null,
-        serviceId: r['service_id'] ?? null,
-        tripHeadsign: r['trip_headsign'] ?? null,
-        tripShortName: r['trip_short_name'] ?? null,
-        directionId: r['direction_id'] ? parseInt(r['direction_id']) : null,
-        shapeId: r['shape_id'] ?? null,
-        wheelchairAccessible: r['wheelchair_accessible']
-          ? parseInt(r['wheelchair_accessible'])
-          : null,
+    const mapped = dedupeByKey(
+      records.map((r) => ({
+        tripId: csvField(r, 'trip_id'),
+        routeId: csvField(r, 'route_id') || null,
+        serviceId: csvField(r, 'service_id') || null,
+        tripHeadsign: csvField(r, 'trip_headsign') || null,
+        tripShortName: csvField(r, 'trip_short_name') || null,
+        directionId: parseOptionalInt(csvField(r, 'direction_id')),
+        shapeId: csvField(r, 'shape_id') || null,
+        wheelchairAccessible: parseOptionalInt(
+          csvField(r, 'wheelchair_accessible'),
+        ),
         mode,
         feedKey,
         updatedAt: new Date(),
-      }));
+      })),
+      (r) => r.tripId,
+    );
+    for (let i = 0; i < mapped.length; i += BATCH_SIZE) {
+      const batch = mapped.slice(i, i + BATCH_SIZE);
+      if (batch.length === 0) continue;
       await this.db
         .insert(gtfsTrip)
         .values(batch)
@@ -544,8 +596,10 @@ export class GtfsStaticService {
           },
         });
     }
-    this.logger.debug(`Ingested ${records.length} trips for ${feedKey}`);
-    return records.length;
+    this.logger.debug(
+      `Ingested ${mapped.length} trips for ${feedKey} (${records.length} csv rows)`,
+    );
+    return mapped.length;
   }
 
   private async ingestCalendar(
@@ -556,22 +610,27 @@ export class GtfsStaticService {
     const entry = fileMap.get('calendar.txt');
     if (!entry) return;
     const records = await this.parseCsvFromZipEntry(entry);
-    for (let i = 0; i < records.length; i += BATCH_SIZE) {
-      const batch = records.slice(i, i + BATCH_SIZE).map((r) => ({
-        serviceId: r['service_id'] ?? '',
-        monday: parseInt(r['monday'] ?? '0'),
-        tuesday: parseInt(r['tuesday'] ?? '0'),
-        wednesday: parseInt(r['wednesday'] ?? '0'),
-        thursday: parseInt(r['thursday'] ?? '0'),
-        friday: parseInt(r['friday'] ?? '0'),
-        saturday: parseInt(r['saturday'] ?? '0'),
-        sunday: parseInt(r['sunday'] ?? '0'),
-        startDate: r['start_date'] ?? '',
-        endDate: r['end_date'] ?? '',
+    const mapped = dedupeByKey(
+      records.map((r) => ({
+        serviceId: csvField(r, 'service_id'),
+        monday: parseInt(csvField(r, 'monday') || '0', 10),
+        tuesday: parseInt(csvField(r, 'tuesday') || '0', 10),
+        wednesday: parseInt(csvField(r, 'wednesday') || '0', 10),
+        thursday: parseInt(csvField(r, 'thursday') || '0', 10),
+        friday: parseInt(csvField(r, 'friday') || '0', 10),
+        saturday: parseInt(csvField(r, 'saturday') || '0', 10),
+        sunday: parseInt(csvField(r, 'sunday') || '0', 10),
+        startDate: csvField(r, 'start_date'),
+        endDate: csvField(r, 'end_date'),
         mode,
         feedKey,
         updatedAt: new Date(),
-      }));
+      })),
+      (r) => r.serviceId,
+    );
+    for (let i = 0; i < mapped.length; i += BATCH_SIZE) {
+      const batch = mapped.slice(i, i + BATCH_SIZE);
+      if (batch.length === 0) continue;
       await this.db
         .insert(gtfsCalendar)
         .values(batch)
@@ -603,15 +662,24 @@ export class GtfsStaticService {
     const entry = fileMap.get('calendar_dates.txt');
     if (!entry) return;
     const records = await this.parseCsvFromZipEntry(entry);
-    for (let i = 0; i < records.length; i += BATCH_SIZE) {
-      const batch = records.slice(i, i + BATCH_SIZE).map((r) => ({
-        id: `${r['service_id']}_${r['date']}`,
-        serviceId: r['service_id'] ?? '',
-        date: r['date'] ?? '',
-        exceptionType: parseInt(r['exception_type'] ?? '0'),
-        mode,
-        feedKey,
-      }));
+    const mapped = dedupeByKey(
+      records.map((r) => {
+        const serviceId = csvField(r, 'service_id');
+        const date = csvField(r, 'date');
+        return {
+          id: `${serviceId}_${date}`,
+          serviceId,
+          date,
+          exceptionType: parseInt(csvField(r, 'exception_type') || '0', 10),
+          mode,
+          feedKey,
+        };
+      }),
+      (r) => r.id,
+    );
+    for (let i = 0; i < mapped.length; i += BATCH_SIZE) {
+      const batch = mapped.slice(i, i + BATCH_SIZE);
+      if (batch.length === 0) continue;
       await this.db
         .insert(gtfsCalendarDate)
         .values(batch)
@@ -636,19 +704,29 @@ export class GtfsStaticService {
     const entry = fileMap.get('stop_times.txt');
     if (!entry) return 0;
 
-    const total = await this.forEachCsvBatch(entry, async (records) => {
-      const batch = records.map((r) => ({
-        id: `${r['trip_id']}_${r['stop_sequence']}`,
-        tripId: r['trip_id'] ?? '',
-        arrivalTime: r['arrival_time'] ?? null,
-        departureTime: r['departure_time'] ?? null,
-        stopId: r['stop_id'] ?? '',
-        stopSequence: r['stop_sequence'] ? parseInt(r['stop_sequence']) : 0,
-        pickupType: r['pickup_type'] ? parseInt(r['pickup_type']) : null,
-        dropOffType: r['drop_off_type'] ? parseInt(r['drop_off_type']) : null,
-        mode,
-        feedKey,
-      }));
+    let inserted = 0;
+    await this.forEachCsvBatch(entry, async (records) => {
+      const batch = dedupeByKey(
+        records.map((r) => {
+          const tripId = csvField(r, 'trip_id');
+          const stopSequence =
+            parseOptionalInt(csvField(r, 'stop_sequence')) ?? 0;
+          return {
+            id: `${tripId}_${stopSequence}`,
+            tripId,
+            arrivalTime: csvField(r, 'arrival_time') || null,
+            departureTime: csvField(r, 'departure_time') || null,
+            stopId: csvField(r, 'stop_id'),
+            stopSequence,
+            pickupType: parseOptionalInt(csvField(r, 'pickup_type')),
+            dropOffType: parseOptionalInt(csvField(r, 'drop_off_type')),
+            mode,
+            feedKey,
+          };
+        }),
+        (r) => r.id,
+      );
+      if (batch.length === 0) return;
       await this.db
         .insert(gtfsStopTime)
         .values(batch)
@@ -666,10 +744,11 @@ export class GtfsStaticService {
             feedKey: sql`excluded.feed_key`,
           },
         });
+      inserted += batch.length;
     });
 
-    this.logger.debug(`Ingested ${total} stop_times for ${feedKey}`);
-    return total;
+    this.logger.debug(`Ingested ${inserted} stop_times for ${feedKey}`);
+    return inserted;
   }
 
   /**
