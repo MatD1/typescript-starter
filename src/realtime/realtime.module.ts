@@ -18,6 +18,6 @@ import { VehicleStreamService } from './vehicle-stream.service';
     RealtimePollerService,
     VehicleStreamService,
   ],
-  exports: [pubSubProvider],
+  exports: [pubSubProvider, RealtimeService],
 })
 export class RealtimeModule { }

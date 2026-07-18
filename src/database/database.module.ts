@@ -5,10 +5,16 @@ import { Pool } from 'pg';
 import * as authSchema from './schema/auth.schema';
 import * as gtfsSchema from './schema/gtfs.schema';
 import * as requestLogSchema from './schema/request-log.schema';
+import * as historySchema from './schema/history.schema';
 
 export const DRIZZLE = Symbol('DRIZZLE');
 
-const schema = { ...authSchema, ...gtfsSchema, ...requestLogSchema };
+const schema = {
+  ...authSchema,
+  ...gtfsSchema,
+  ...requestLogSchema,
+  ...historySchema,
+};
 
 export type AppSchema = typeof schema;
 export type DrizzleDB = NodePgDatabase<AppSchema>;

@@ -8,7 +8,7 @@ import { VehiclePositionObject } from './dto/vehicle-position.object';
 import { TripUpdateObject } from './dto/trip-update.object';
 import { TrackedTripObject } from './dto/tracked-trip.object';
 import { TransportModeEnum } from '../transport/transport.types';
-
+import { Public } from '../common/decorators/public.decorator';
 @Resolver()
 export class RealtimeResolver {
   constructor(
@@ -17,6 +17,7 @@ export class RealtimeResolver {
     @Inject(PUB_SUB) private readonly pubSub: RedisPubSub,
   ) {}
 
+  @Public()
   @Query(() => [VehiclePositionObject], {
     description:
       'Get live vehicle positions. Optionally filter by transport mode.',
@@ -28,6 +29,7 @@ export class RealtimeResolver {
     return this.realtimeService.getVehiclePositions(mode);
   }
 
+  @Public()
   @Query(() => [TripUpdateObject], {
     description: 'Get live trip updates. Optionally filter by transport mode.',
   })
@@ -38,6 +40,7 @@ export class RealtimeResolver {
     return this.realtimeService.getTripUpdates(mode);
   }
 
+  @Public()
   @Query(() => TrackedTripObject, {
     name: 'trackTrip',
     nullable: true,
@@ -75,6 +78,7 @@ export class RealtimeResolver {
     });
   }
 
+  @Public()
   @Subscription(() => TrackedTripObject, {
     resolve: (payload) => payload.trackTrip,
     description:

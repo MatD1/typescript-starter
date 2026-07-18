@@ -9,5 +9,6 @@ import { DisruptionsResolver } from './disruptions.resolver';
   imports: [TransportModule, GtfsStaticModule],
   controllers: [DisruptionsController],
   providers: [DisruptionsService, DisruptionsResolver],
+  exports: [DisruptionsService],
 })
 export class DisruptionsModule {}

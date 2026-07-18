@@ -17,11 +17,12 @@ import {
 } from './dto/trip-planner.objects';
 import { RouteMetadataDataLoader } from '../gtfs-static/gtfs-route.dataloader';
 import { StopFinderTypeEnum } from '../transport/transport.types';
-
+import { Public } from '../common/decorators/public.decorator';
 @Resolver()
 export class TripPlannerResolver {
   constructor(private readonly tripPlannerService: TripPlannerService) {}
 
+  @Public()
   @Query(() => TripPlannerResponseObject, {
     description: 'Plan a journey between two locations.',
   })
@@ -69,6 +70,7 @@ export class TripPlannerResolver {
     });
   }
 
+  @Public()
   @Query(() => [StopObject], {
     description: 'Search for stops and stations by name.',
   })
@@ -87,6 +89,7 @@ export class TripPlannerResolver {
     });
   }
 
+  @Public()
   @Query(() => [DepartureObject], {
     description: 'Get departure board for a stop.',
   })
@@ -104,6 +107,7 @@ export class TripPlannerResolver {
     });
   }
 
+  @Public()
   @Query(() => [StopObject], {
     description: 'Find stops near a coordinate.',
   })

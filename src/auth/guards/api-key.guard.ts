@@ -21,13 +21,19 @@ export class ApiKeyGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const req = this.getRequest(context);
+    
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
-    if (isPublic) return true;
 
-    const req = this.getRequest(context);
+    if (isPublic) {
+      const clientSecret = process.env.JRAIL_CLIENT_SECRET;
+      if (!clientSecret || req.headers['x-jrail-client'] === clientSecret) {
+        return true;
+      }
+    }
     const apiKeyHeader = req.headers['x-api-key'];
     const apiKeyValue = Array.isArray(apiKeyHeader)
       ? apiKeyHeader[0]?.trim()

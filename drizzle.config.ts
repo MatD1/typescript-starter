@@ -3,6 +3,7 @@ export default {
     './src/database/schema/auth.schema.ts',
     './src/database/schema/gtfs.schema.ts',
     './src/database/schema/request-log.schema.ts',
+    './src/database/schema/history.schema.ts',
   ],
   out: './drizzle',
   dialect: 'postgresql',
