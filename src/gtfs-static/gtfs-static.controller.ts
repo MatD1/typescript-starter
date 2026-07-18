@@ -39,20 +39,42 @@ export class GtfsStaticController {
   @ApiOperation({
     summary: 'Trigger GTFS static data ingestion (admin only)',
     description:
-      'Downloads and ingests GTFS static data from NSW Open Data. This runs automatically nightly; use this to trigger manually.',
+      'Manual ingest via the bulletproof pipeline: static API key gate, HEAD/GET, Railway S3, ' +
+      'per-feed transactional replace across the full schedule catalog (~45 feeds). ' +
+      'Pass force=true to always re-download (default for admin full ingest).',
   })
   @ApiQuery({
     name: 'mode',
     required: false,
-    enum: TRANSPORT_MODES,
-    description: 'Ingest single mode (omit for all)',
+    description:
+      'Logical mode (e.g. buses, lightrail) or feedKey (e.g. buses/GSBC001). Omit for all catalog feeds.',
+  })
+  @ApiQuery({
+    name: 'force',
+    required: false,
+    type: Boolean,
+    description:
+      'When true, bypass Last-Modified/S3 skip and re-GET from TfNSW',
   })
   ingest(
-    @Query('mode', new ParseEnumPipe(TransportModeEnum, { optional: true }))
-    mode?: string,
+    @Query('mode') mode?: string,
+    @Query('force') force?: string,
   ) {
-    if (mode) return this.gtfsStaticService.ingestMode(mode);
-    return this.gtfsStaticService.ingestAll();
+    const options = {
+      force: force === 'true' || force === '1',
+    };
+    if (mode) return this.gtfsStaticService.ingestMode(mode, options);
+    return this.gtfsStaticService.ingestAll(options);
+  }
+
+  @Get('ingest/status')
+  @UseGuards(AdminGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary: 'GTFS ingest catalog and last per-feed run status (admin only)',
+  })
+  ingestStatus() {
+    return this.gtfsStaticService.getIngestStatus();
   }
 
   @Get('routes')

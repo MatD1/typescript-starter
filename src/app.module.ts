@@ -32,6 +32,7 @@ import { HistoryModule } from './history/history.module';
 import { GtfsStaticModule } from './gtfs-static/gtfs-static.module';
 import { AdminModule } from './admin/admin.module';
 import { HealthModule } from './health/health.module';
+import { StorageModule } from './storage/storage.module';
 
 import { ApiKeyGuard } from './auth/guards/api-key.guard';
 import { GqlThrottlerGuard } from './common/guards/gql-throttler.guard';
@@ -61,6 +62,7 @@ const MAX_QUERY_DEPTH = 8;
     }),
     DatabaseModule,
     CacheModule,
+    StorageModule,
     AuthModule,
     GraphQLModule.forRoot<ApolloDriverConfig>({
       driver: ApolloDriver,

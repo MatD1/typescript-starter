@@ -235,20 +235,52 @@ export class GtfsTableCountSwagger {
   count!: number;
 }
 
+export class GtfsFeedRunStatusSwagger {
+  @ApiProperty({ description: 'Schedule feed key (e.g. buses/GSBC001)' })
+  feedKey!: string;
+
+  @ApiPropertyOptional({ description: 'Whether the last run succeeded' })
+  success?: boolean;
+
+  @ApiPropertyOptional({ description: 'Finished at (ISO 8601)' })
+  finishedAt?: string;
+
+  @ApiPropertyOptional({ description: 'Routes ingested in that run' })
+  routesCount?: number;
+
+  @ApiPropertyOptional({ description: 'Error message if failed' })
+  error?: string;
+
+  @ApiPropertyOptional({ description: 'True when HEAD Last-Modified matched S3 and GET was skipped' })
+  skippedUnchanged?: boolean;
+}
+
 export class GtfsStatusSwagger {
   @ApiPropertyOptional({ description: 'Last ingest timestamp (ISO 8601)' })
   lastIngest?: string;
 
   @ApiProperty({ type: [GtfsTableCountSwagger], description: 'Row counts per table' })
   tableCounts!: GtfsTableCountSwagger[];
+
+  @ApiPropertyOptional({
+    type: [GtfsFeedRunStatusSwagger],
+    description: 'Latest per-feed ingest run status',
+  })
+  feedRuns?: GtfsFeedRunStatusSwagger[];
 }
 
 export class GtfsIngestResultSwagger {
-  @ApiProperty({ description: 'Whether ingest succeeded' })
+  @ApiProperty({ description: 'Whether all feeds ingested successfully' })
   success!: boolean;
 
-  @ApiProperty({ type: [String], description: 'Modes that were ingested' })
+  @ApiProperty({ type: [String], description: 'Logical modes that were ingested' })
   modesIngested!: string[];
+
+  @ApiPropertyOptional({ type: [String], description: 'Feed keys that succeeded' })
+  feedsIngested?: string[];
+
+  @ApiPropertyOptional({ type: [String], description: 'Feed keys that failed' })
+  failedFeeds?: string[];
 }
 
 // ─── Health Schemas ───────────────────────────────────────────────────────────

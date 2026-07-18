@@ -9,4 +9,7 @@ export const CacheTTL = {
   GTFS_STATIC: 86400,
   INTERCITY_ROUTES: 3600,
   ROUTE_MAP: 3600,
+  /** Active scheduled trip counts per route for today (Sydney). */
+  SCHEDULED_TRIPS: 3600,
+  STOP_ROUTES: 3600,
 } as const;

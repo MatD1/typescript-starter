@@ -17,8 +17,19 @@ export default () => ({
 
   transport: {
     apiKey: process.env.NSW_TRANSPORT_API_KEY,
+    staticApiKey: process.env.NSW_TRANSPORT_STATIC_API_KEY,
     baseUrl:
       process.env.NSW_TRANSPORT_BASE_URL ?? 'https://api.transport.nsw.gov.au',
+  },
+
+  s3: {
+    endpoint: process.env.S3_ENDPOINT ?? process.env.AWS_ENDPOINT_URL,
+    region: process.env.S3_REGION ?? process.env.AWS_REGION ?? 'auto',
+    bucket: process.env.S3_BUCKET ?? process.env.AWS_S3_BUCKET,
+    accessKeyId:
+      process.env.S3_ACCESS_KEY_ID ?? process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey:
+      process.env.S3_SECRET_ACCESS_KEY ?? process.env.AWS_SECRET_ACCESS_KEY,
   },
 
   supabase: {

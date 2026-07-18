@@ -247,8 +247,17 @@ export class AdminResolver {
   }
 
   @Mutation(() => GtfsIngestResult, { name: 'adminTriggerGtfsIngest' })
-  async adminTriggerGtfsIngest(): Promise<GtfsIngestResult> {
-    return this.adminService.triggerGtfsIngest();
+  async adminTriggerGtfsIngest(
+    @Args('force', {
+      type: () => Boolean,
+      nullable: true,
+      defaultValue: true,
+      description:
+        'When true (default), re-download all catalog feeds via static key + S3 (skip Last-Modified short-circuit)',
+    })
+    force?: boolean,
+  ): Promise<GtfsIngestResult> {
+    return this.adminService.triggerGtfsIngest(force ?? true);
   }
 
   @Mutation(() => Boolean, { name: 'adminFlushCache' })

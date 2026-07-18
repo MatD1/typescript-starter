@@ -71,6 +71,16 @@ export class CacheService implements OnModuleDestroy {
     return fresh;
   }
 
+  /** SET key NX EX ttl — returns true when the lock was acquired. */
+  async acquireLock(key: string, ttlSeconds: number): Promise<boolean> {
+    const result = await this.client.set(key, '1', 'EX', ttlSeconds, 'NX');
+    return result === 'OK';
+  }
+
+  async releaseLock(key: string): Promise<void> {
+    await this.client.del(key);
+  }
+
   onModuleDestroy() {
     this.client.disconnect();
   }

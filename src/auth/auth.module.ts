@@ -8,6 +8,7 @@ import { ApiKeyService } from './api-key.service';
 import { ApiKeyController } from './api-key.controller';
 import { ApiKeyGuard } from './guards/api-key.guard';
 import { AdminGuard } from './guards/admin.guard';
+import { RolesGuard } from './guards/roles.guard';
 import { CacheModule } from '../cache/cache.module';
 
 @Module({
@@ -24,7 +25,8 @@ import { CacheModule } from '../cache/cache.module';
     ApiKeyService,
     ApiKeyGuard,
     AdminGuard,
+    RolesGuard,
   ],
-  exports: [AuthService, ApiKeyService, ApiKeyGuard, AdminGuard],
+  exports: [AuthService, ApiKeyService, ApiKeyGuard, AdminGuard, RolesGuard],
 })
 export class AuthModule {}

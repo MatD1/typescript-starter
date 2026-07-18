@@ -28,6 +28,7 @@ import { CacheService } from '../cache/cache.service';
 import { ApiKeyService } from '../auth/api-key.service';
 import { AuthService } from '../auth/auth.service';
 import { GtfsStaticService } from '../gtfs-static/gtfs-static.service';
+import { HistorySamplerService } from '../history/history-sampler.service';
 import type {
   AdminUsersQueryDto,
   UpdateUserDto,
@@ -69,6 +70,7 @@ export class AdminService {
     private readonly apiKeyService: ApiKeyService,
     private readonly authService: AuthService,
     private readonly gtfsStaticService: GtfsStaticService,
+    private readonly historySamplerService: HistorySamplerService,
     private readonly httpService: HttpService,
   ) { }
 
@@ -588,7 +590,7 @@ export class AdminService {
   // ─── GTFS ──────────────────────────────────────────────────────────────────
 
   async getGtfsStatus(): Promise<GtfsStatus> {
-    const [stops, routes, trips, calendars, lastIngestRows] =
+    const [stops, routes, trips, calendars, lastIngestRows, ingestStatus] =
       await Promise.all([
         this.db.select({ value: count() }).from(gtfsStop),
         this.db.select({ value: count() }).from(gtfsRoute),
@@ -599,6 +601,7 @@ export class AdminService {
           .from(gtfsStop)
           .orderBy(desc(gtfsStop.updatedAt))
           .limit(1),
+        this.gtfsStaticService.getIngestStatus(),
       ]);
 
     const lastIngest = lastIngestRows[0]?.updatedAt
@@ -613,19 +616,40 @@ export class AdminService {
         { table: 'gtfs_trips', count: trips[0]?.value ?? 0 },
         { table: 'gtfs_calendar', count: calendars[0]?.value ?? 0 },
       ],
+      feedRuns: ingestStatus.lastRuns.map((r) => ({
+        feedKey: r.feedKey,
+        success: r.success ?? undefined,
+        finishedAt: r.finishedAt?.toISOString(),
+        routesCount: r.routesCount ?? undefined,
+        error: r.error ?? undefined,
+        skippedUnchanged: r.skippedUnchanged ?? undefined,
+      })),
     };
   }
 
-  async triggerGtfsIngest(): Promise<GtfsIngestResult> {
+  /**
+   * Manual / forceful full-catalog GTFS ingest.
+   * Uses the same pipeline as cron: static API key gate, HEAD/GET, S3, per-feed replace.
+   * @param force When true, always re-download from TfNSW (skip Last-Modified short-circuit).
+   */
+  async triggerGtfsIngest(force = true): Promise<GtfsIngestResult> {
     try {
-      const results = await this.gtfsStaticService.ingestAll();
-      const modesIngested = results
-        .filter((r) => r.success)
-        .map((r) => r.mode);
-      return { success: modesIngested.length > 0, modesIngested };
+      this.logger.log(
+        `Admin GTFS ingest started (force=${force}, catalog feeds via static key + S3)`,
+      );
+      const results = await this.gtfsStaticService.ingestAll({ force });
+      const ok = results.filter((r) => r.success);
+      const failed = results.filter((r) => !r.success);
+      const modesIngested = [...new Set(ok.map((r) => r.mode))];
+      return {
+        success: failed.length === 0 && ok.length > 0,
+        modesIngested,
+        feedsIngested: ok.map((r) => r.feedKey),
+        failedFeeds: failed.map((r) => r.feedKey),
+      };
     } catch (err) {
       this.logger.error(`GTFS ingest failed: ${String(err)}`);
-      return { success: false, modesIngested: [] };
+      return { success: false, modesIngested: [], feedsIngested: [], failedFeeds: [] };
     }
   }
 
@@ -642,6 +666,7 @@ export class AdminService {
       this.checkDb(),
       this.checkRedis(),
       this.checkTfNsw(),
+      this.checkHistorySampler(),
     ]);
 
     const memoryUsage = process.memoryUsage();
@@ -649,7 +674,9 @@ export class AdminService {
     const uptimeSeconds = Math.round(process.uptime());
 
     return {
-      healthy: checks.every((c) => c.status === 'ok'),
+      healthy: checks.every(
+        (c) => c.status === 'ok' || c.status.startsWith('ok:'),
+      ),
       checks,
       process: { memoryUsageMb, uptimeSeconds },
     };
@@ -728,6 +755,51 @@ export class AdminService {
       return {
         name: 'tfnsw_api',
         status: 'unreachable',
+        latencyMs: Date.now() - start,
+      };
+    }
+  }
+
+  private async checkHistorySampler(): Promise<{
+    name: string;
+    status: string;
+    latencyMs: number;
+  }> {
+    const start = Date.now();
+    try {
+      const metrics = await this.historySamplerService.getMetrics();
+      const lastSuccess = metrics.lastSuccessAt
+        ? Date.parse(metrics.lastSuccessAt)
+        : null;
+      const ageMs = lastSuccess != null ? Date.now() - lastSuccess : null;
+      // Warn if no successful sample in >15 minutes (during uptime after first sample)
+      if (metrics.consecutiveFailures >= 3) {
+        return {
+          name: 'history_sampler',
+          status: `error: ${metrics.consecutiveFailures} consecutive failures`,
+          latencyMs: Date.now() - start,
+        };
+      }
+      if (ageMs != null && ageMs > 15 * 60_000) {
+        return {
+          name: 'history_sampler',
+          status: `error: last success ${Math.round(ageMs / 60_000)}m ago`,
+          latencyMs: Date.now() - start,
+        };
+      }
+      const detail =
+        lastSuccess == null
+          ? 'ok: no sample yet'
+          : `ok: last=${metrics.lastLineCount ?? 0} lines, ${metrics.lastSampleDurationMs ?? 0}ms`;
+      return {
+        name: 'history_sampler',
+        status: detail,
+        latencyMs: Date.now() - start,
+      };
+    } catch (err) {
+      return {
+        name: 'history_sampler',
+        status: `error: ${String(err)}`,
         latencyMs: Date.now() - start,
       };
     }

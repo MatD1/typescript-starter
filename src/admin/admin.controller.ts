@@ -18,6 +18,7 @@ import {
   ApiOperation,
   ApiBearerAuth,
   ApiParam,
+  ApiQuery,
   ApiExtraModels,
   ApiBody,
   ApiOkResponse,
@@ -389,14 +390,24 @@ export class AdminController {
   @ApiOperation({
     summary: 'Trigger a full GTFS static data ingest (admin)',
     description:
-      'Downloads GTFS data from NSW Open Data and reloads all static tables. ' +
-      'This runs automatically overnight; use this to trigger a manual refresh. ' +
+      'Forceful full-catalog ingest (~45 schedule feeds) via the same pipeline as the nightly job: ' +
+      'dedicated static API key gate, HEAD/GET, Railway S3 ZIP persistence, and per-feed DB replace. ' +
+      'Never uses the invalid consolidated /buses endpoint. ' +
+      'Defaults to force=true (always re-download). Pass force=false to allow Last-Modified skips. ' +
       'Rate-limited to 1 request per 5 minutes.',
   })
-  @ApiCreatedResponse({ type: GtfsIngestResultSwagger, description: 'Ingest summary with modes ingested' })
+  @ApiQuery({
+    name: 'force',
+    required: false,
+    type: Boolean,
+    description:
+      'When true (default), bypass Last-Modified/S3 skip and re-GET every feed from TfNSW',
+  })
+  @ApiCreatedResponse({ type: GtfsIngestResultSwagger, description: 'Ingest summary with modes/feeds ingested' })
   @ApiTooManyRequestsResponse({ description: 'Rate limit exceeded (1 per 5 minutes)' })
-  triggerGtfsIngest() {
-    return this.adminService.triggerGtfsIngest();
+  triggerGtfsIngest(@Query('force') force?: string) {
+    const forceFlag = force === undefined ? true : force !== 'false' && force !== '0';
+    return this.adminService.triggerGtfsIngest(forceFlag);
   }
 
   @Delete('gtfs/cache')

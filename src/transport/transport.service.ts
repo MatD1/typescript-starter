@@ -5,9 +5,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@nestjs/axios';
 import { AxiosRequestConfig } from 'axios';
-import { firstValueFrom } from 'rxjs';
 import {
   CoordParams,
   DepartureMonitorParams,
@@ -16,6 +14,7 @@ import {
   TransportMode,
   TripPlannerParams,
 } from './transport.types';
+import { TfnswHttpClient } from './tfnsw-http.client';
 
 /**
  * Modes supported by the v2 GTFS-RT trip-updates endpoint.
@@ -53,36 +52,19 @@ const MODE_TO_VEHICLEPOS_PATH: Partial<Record<TransportMode, string>> = {
 export class TransportService {
   private readonly logger = new Logger(TransportService.name);
   private readonly baseUrl: string;
-  private readonly apiKey: string;
 
   constructor(
-    private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    private readonly tfnsw: TfnswHttpClient,
   ) {
     this.baseUrl = this.configService.get<string>('transport.baseUrl')!;
-    this.apiKey = this.normalizeApiKey(
-      this.configService.get<string>('transport.apiKey'),
-    );
-    if (!this.apiKey) {
+    if (!this.tfnsw.getApiKey('realtime')) {
       this.logger.error(
         'NSW_TRANSPORT_API_KEY is missing or empty. TfNSW requests are disabled until it is configured.',
       );
     } else {
-      this.logger.log('TfNSW API credential configured');
+      this.logger.log('TfNSW API credential configured (realtime key gate)');
     }
-  }
-
-  private normalizeApiKey(value?: string): string {
-    if (!value) return '';
-    return value
-      .trim()
-      .replace(/^(['"])(.*)\1$/, '$2')
-      .replace(/^apikey\s+/i, '')
-      .trim();
-  }
-
-  private get authHeaders() {
-    return { Authorization: `apikey ${this.apiKey}` };
   }
 
   async getGtfsRealtime(
@@ -91,7 +73,7 @@ export class TransportService {
   ): Promise<Buffer> {
     const url = this.buildGtfsRtUrl(feedType, mode);
     const config: AxiosRequestConfig = {
-      headers: { ...this.authHeaders, Accept: 'application/x-google-protobuf' },
+      headers: { Accept: 'application/x-google-protobuf' },
       responseType: 'arraybuffer',
     };
     return this.request<Buffer>(url, config);
@@ -132,7 +114,7 @@ export class TransportService {
     const url = `${this.baseUrl}/v1/tp/trip`;
     const v1Params = this.mapTripParamsToV1(params);
     const config: AxiosRequestConfig = {
-      headers: { ...this.authHeaders, Accept: 'application/json' },
+      headers: { Accept: 'application/json' },
       params: {
         outputFormat: 'rapidJSON',
         coordOutputFormat: 'EPSG:4326',
@@ -145,7 +127,7 @@ export class TransportService {
   async getStopFinder(params: StopFinderParams): Promise<unknown> {
     const url = `${this.baseUrl}/v1/tp/stop_finder`;
     const config: AxiosRequestConfig = {
-      headers: { ...this.authHeaders, Accept: 'application/json' },
+      headers: { Accept: 'application/json' },
       params: {
         outputFormat: 'rapidJSON',
         coordOutputFormat: 'EPSG:4326',
@@ -159,7 +141,7 @@ export class TransportService {
   async getDepartureMonitor(params: DepartureMonitorParams): Promise<unknown> {
     const url = `${this.baseUrl}/v1/tp/departure_mon`;
     const config: AxiosRequestConfig = {
-      headers: { ...this.authHeaders, Accept: 'application/json' },
+      headers: { Accept: 'application/json' },
       params: {
         outputFormat: 'rapidJSON',
         coordOutputFormat: 'EPSG:4326',
@@ -174,7 +156,7 @@ export class TransportService {
   async getCoord(params: CoordParams): Promise<unknown> {
     const url = `${this.baseUrl}/v1/tp/coord`;
     const config: AxiosRequestConfig = {
-      headers: { ...this.authHeaders, Accept: 'application/json' },
+      headers: { Accept: 'application/json' },
       params: {
         outputFormat: 'rapidJSON',
         coordOutputFormat: 'EPSG:4326',
@@ -215,42 +197,17 @@ export class TransportService {
     url: string,
     config: AxiosRequestConfig,
   ): Promise<T> {
-    if (!this.apiKey) {
-      throw new ServiceUnavailableException(
-        'TfNSW API credentials are not configured',
-      );
-    }
-
     try {
-      const response = await firstValueFrom(
-        this.httpService.get<T>(url, config),
-      );
-      return response.data;
+      return await this.tfnsw.getRealtime<T>(url, config);
     } catch (err: unknown) {
-      const axiosErr = err as {
-        response?: { status?: number; statusText?: string };
-        message?: string;
-      };
-      const status = axiosErr?.response?.status;
-      const msg = `NSW Transport API error: ${axiosErr?.response?.statusText ?? axiosErr?.message ?? 'Unknown'}`;
-      if (status === 401 || status === 403) {
-        this.logger.error(
-          `TfNSW rejected the configured credential [${status}] ${url}. Check key validity, API-product access, and quota in the TfNSW portal.`,
-        );
-        throw new ServiceUnavailableException(
-          'TfNSW authentication is currently unavailable',
-        );
+      if (
+        err instanceof ServiceUnavailableException ||
+        err instanceof InternalServerErrorException
+      ) {
+        throw err;
       }
-      if (status === 429) {
-        this.logger.warn(`TfNSW rate limit exceeded [429] ${url}`);
-        throw new ServiceUnavailableException(
-          'TfNSW request quota is temporarily exhausted',
-        );
-      }
-      this.logger.error(`${msg} [${status ?? 'N/A'}] ${url}`);
-      if (status === 503 || status === 504) {
-        throw new ServiceUnavailableException('NSW Transport API unavailable');
-      }
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`NSW Transport API error: ${msg} ${url}`);
       throw new InternalServerErrorException(msg);
     }
   }

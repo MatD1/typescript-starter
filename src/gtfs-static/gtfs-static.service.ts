@@ -1,11 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { PaginatedResult } from './dto/gtfs-static.objects';
-import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
 import * as unzipper from 'unzipper';
 import { parse } from 'csv-parse';
 import { inArray, eq, isNotNull, or, sql, count } from 'drizzle-orm';
+import { randomUUID } from 'crypto';
+import { Readable } from 'stream';
 import { DRIZZLE } from '../database/database.module';
 import type { DrizzleDB } from '../database/database.module';
 import {
@@ -16,9 +15,21 @@ import {
   gtfsCalendarDate,
   gtfsStopTime,
   gtfsStopRoute,
+  gtfsIngestFeedRun,
 } from '../database/schema/gtfs.schema';
 import { CacheService } from '../cache/cache.service';
 import { CacheTTL } from '../cache/cache.constants';
+import { sydneyLocalDate } from '../history/sydney-date.util';
+import { resolveLine } from '../history/line-identity.util';
+import { TfnswHttpClient } from '../transport/tfnsw-http.client';
+import { S3Service } from '../storage/s3.service';
+import {
+  GTFS_SCHEDULE_FEEDS,
+  getScheduleFeed,
+  getScheduleFeedsForLogicalMode,
+  isConsolidatedBusesUrl,
+  type GtfsScheduleFeed,
+} from './gtfs-schedule.feeds';
 
 /** NSW intercity lines: Blue Mountains, Central Coast, Hunter, South Coast, Southern Highlands */
 const INTERCITY_ROUTE_SHORT_NAMES = [
@@ -29,79 +40,306 @@ const INTERCITY_ROUTE_SHORT_NAMES = [
   'SHL',
 ] as const;
 
-const GTFS_STATIC_URLS: Record<string, string> = {
-  sydneytrains:
-    'https://api.transport.nsw.gov.au/v1/gtfs/schedule/sydneytrains',
-  metro: 'https://api.transport.nsw.gov.au/v1/gtfs/schedule/metro',
-  lightrail: 'https://api.transport.nsw.gov.au/v1/gtfs/schedule/lightrail',
-  nswtrains: 'https://api.transport.nsw.gov.au/v1/gtfs/schedule/nswtrains',
-};
-
 const BATCH_SIZE = 500;
+const REQUIRED_ZIP_FILES = ['routes.txt'] as const;
 
 type CsvRecord = Record<string, string>;
+
+export interface GtfsIngestFeedResult {
+  feedKey: string;
+  mode: string;
+  success: boolean;
+  skippedUnchanged?: boolean;
+  error?: string;
+  routesCount?: number;
+  tripsCount?: number;
+  stopsCount?: number;
+  stopTimesCount?: number;
+}
+
+export interface GtfsIngestOptions {
+  /**
+   * When true, always GET from TfNSW (skip HEAD Last-Modified / S3 / local short-circuit).
+   * Still uses the static API key gate, S3 persistence, and per-feed replace.
+   */
+  force?: boolean;
+}
 
 @Injectable()
 export class GtfsStaticService {
   private readonly logger = new Logger(GtfsStaticService.name);
+  /** In-memory ZIP fallback when S3 is not configured (dev/tests). */
+  private readonly localZipCache = new Map<
+    string,
+    { buffer: Buffer; lastModified?: string }
+  >();
 
   constructor(
-    private readonly configService: ConfigService,
-    private readonly httpService: HttpService,
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
     private readonly cache: CacheService,
+    private readonly tfnsw: TfnswHttpClient,
+    private readonly s3: S3Service,
   ) {}
 
-  async ingestAll(): Promise<
-    { mode: string; success: boolean; error?: string }[]
-  > {
-    const modes = Object.keys(GTFS_STATIC_URLS);
-    const results: { mode: string; success: boolean; error?: string }[] = [];
-    for (const mode of modes) {
-      results.push(await this.ingestMode(mode));
+  async ingestAll(
+    options: GtfsIngestOptions = {},
+  ): Promise<GtfsIngestFeedResult[]> {
+    if (options.force) {
+      this.logger.log(
+        'Force GTFS ingest: re-downloading all catalog feeds via static API key + S3 pipeline',
+      );
+    }
+    const results: GtfsIngestFeedResult[] = [];
+    for (const feed of GTFS_SCHEDULE_FEEDS) {
+      results.push(await this.ingestFeed(feed, options));
+    }
+    const failed = results.filter((r) => !r.success);
+    if (failed.length > 0) {
+      this.logger.warn(
+        `GTFS ingestAll finished with ${failed.length}/${results.length} failures`,
+      );
     }
     return results;
   }
 
+  /**
+   * Ingest by feedKey, or by logical mode (all feeds for that mode).
+   * Back-compat: `mode` query param may be a feedKey or logicalMode.
+   */
   async ingestMode(
-    mode: string,
-  ): Promise<{ mode: string; success: boolean; error?: string }> {
-    this.logger.log(`Starting GTFS static ingestion for: ${mode}`);
-    const url = GTFS_STATIC_URLS[mode];
-    if (!url) return { mode, success: false, error: 'Unknown mode' };
+    modeOrFeedKey: string,
+    options: GtfsIngestOptions = {},
+  ): Promise<GtfsIngestFeedResult | GtfsIngestFeedResult[]> {
+    const feed = getScheduleFeed(modeOrFeedKey);
+    if (feed) return this.ingestFeed(feed, options);
+
+    const byMode = getScheduleFeedsForLogicalMode(modeOrFeedKey);
+    if (byMode.length > 0) {
+      const results: GtfsIngestFeedResult[] = [];
+      for (const f of byMode) {
+        results.push(await this.ingestFeed(f, options));
+      }
+      return results;
+    }
+
+    return {
+      feedKey: modeOrFeedKey,
+      mode: modeOrFeedKey,
+      success: false,
+      error: 'Unknown feed or mode',
+    };
+  }
+
+  async ingestFeed(
+    feed: GtfsScheduleFeed,
+    options: GtfsIngestOptions = {},
+  ): Promise<GtfsIngestFeedResult> {
+    const { feedKey, logicalMode, url } = feed;
+    this.logger.log(
+      `Starting GTFS static ingestion for: ${feedKey}` +
+        (options.force ? ' (force)' : ''),
+    );
+
+    if (isConsolidatedBusesUrl(url)) {
+      return {
+        feedKey,
+        mode: logicalMode,
+        success: false,
+        error: 'Refusing consolidated /buses endpoint (invalid per TfNSW)',
+      };
+    }
+
+    const runId = randomUUID();
+    await this.db.insert(gtfsIngestFeedRun).values({
+      id: runId,
+      feedKey,
+      logicalMode,
+      startedAt: new Date(),
+    });
 
     try {
-      const apiKey = this.configService.get<string>('transport.apiKey');
-      const response = await firstValueFrom(
-        this.httpService.get<ArrayBuffer>(url, {
-          responseType: 'arraybuffer',
-          headers: { Authorization: `apikey ${apiKey}` },
-          timeout: 120000,
-        }),
+      const head = await this.tfnsw.head(url, 'static');
+      if (head.status < 200 || head.status >= 300) {
+        throw new Error(`HEAD failed with status ${head.status}`);
+      }
+
+      const remoteLastModified = head.lastModified;
+      const { buffer, fromCache, s3Key } = await this.resolveZipBuffer(
+        feed,
+        remoteLastModified,
+        options,
       );
 
-      const buffer = Buffer.from(response.data);
-      await this.processZip(buffer, mode);
-      await this.refreshStopRoutesMapping(mode);
-      this.logger.log(`Completed GTFS static ingestion for: ${mode}`);
-      return { mode, success: true };
+      const counts = await this.processZip(buffer, logicalMode, feedKey);
+      await this.refreshStopRoutesMapping(logicalMode, feedKey);
+
+      await this.db
+        .update(gtfsIngestFeedRun)
+        .set({
+          finishedAt: new Date(),
+          success: true,
+          skippedUnchanged: fromCache,
+          headLastModified: remoteLastModified,
+          s3Key,
+          bytes: buffer.length,
+          httpStatus: fromCache ? 304 : 200,
+          routesCount: counts.routesCount,
+          tripsCount: counts.tripsCount,
+          stopsCount: counts.stopsCount,
+          stopTimesCount: counts.stopTimesCount,
+        })
+        .where(eq(gtfsIngestFeedRun.id, runId));
+
+      this.logger.log(
+        `Completed GTFS static ingestion for: ${feedKey}` +
+          (fromCache ? ' (from S3/cache, unchanged)' : ''),
+      );
+
+      return {
+        feedKey,
+        mode: logicalMode,
+        success: true,
+        skippedUnchanged: fromCache,
+        ...counts,
+      };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      this.logger.error(`GTFS ingestion failed for ${mode}: ${msg}`);
-      return { mode, success: false, error: msg };
+      this.logger.error(`GTFS ingestion failed for ${feedKey}: ${msg}`);
+      await this.db
+        .update(gtfsIngestFeedRun)
+        .set({
+          finishedAt: new Date(),
+          success: false,
+          error: msg,
+        })
+        .where(eq(gtfsIngestFeedRun.id, runId));
+      return { feedKey, mode: logicalMode, success: false, error: msg };
     }
   }
 
-  private async processZip(buffer: Buffer, mode: string): Promise<void> {
-    const directory = await unzipper.Open.buffer(buffer);
-    const fileMap = new Map(directory.files.map((f) => [f.path, f]));
+  private async resolveZipBuffer(
+    feed: GtfsScheduleFeed,
+    remoteLastModified?: string,
+    options: GtfsIngestOptions = {},
+  ): Promise<{ buffer: Buffer; fromCache: boolean; s3Key?: string }> {
+    const { feedKey, url } = feed;
 
-    await this.ingestStops(fileMap, mode);
-    await this.ingestRoutes(fileMap, mode);
-    await this.ingestTrips(fileMap, mode);
-    await this.ingestCalendar(fileMap, mode);
-    await this.ingestCalendarDates(fileMap, mode);
-    await this.ingestStopTimes(fileMap, mode);
+    if (!options.force && remoteLastModified && this.s3.isEnabled()) {
+      const latest = await this.s3.headLatest(feedKey);
+      if (latest.exists && latest.lastModified === remoteLastModified) {
+        this.logger.log(
+          `Skipping GET for ${feedKey}; Last-Modified unchanged (${remoteLastModified})`,
+        );
+        const buffer = await this.s3.getLatestBuffer(feedKey);
+        return { buffer, fromCache: true, s3Key: latest.key };
+      }
+    }
+
+    if (!options.force) {
+      const local = this.localZipCache.get(feedKey);
+      if (
+        remoteLastModified &&
+        local?.lastModified === remoteLastModified &&
+        local.buffer.length > 0
+      ) {
+        this.logger.log(
+          `Skipping GET for ${feedKey}; using local cache (Last-Modified match)`,
+        );
+        return { buffer: local.buffer, fromCache: true };
+      }
+    } else {
+      this.logger.log(`Force GET for ${feedKey} (bypassing Last-Modified skip)`);
+    }
+
+    const downloaded = await this.tfnsw.getScheduleZip(url);
+    if (downloaded.status < 200 || downloaded.status >= 300) {
+      throw new Error(`GET failed with status ${downloaded.status}`);
+    }
+
+    const buffer = downloaded.data;
+    const lastModified = downloaded.lastModified ?? remoteLastModified;
+    const day = sydneyLocalDate(new Date());
+
+    let s3Key: string | undefined;
+    if (this.s3.isEnabled()) {
+      const put = await this.s3.putGtfsZip(feedKey, buffer, {
+        lastModified,
+        day,
+      });
+      s3Key = put.latestKey;
+    }
+
+    this.localZipCache.set(feedKey, { buffer, lastModified });
+    return { buffer, fromCache: false, s3Key };
+  }
+
+  private async processZip(
+    buffer: Buffer,
+    mode: string,
+    feedKey: string,
+  ): Promise<{
+    routesCount: number;
+    tripsCount: number;
+    stopsCount: number;
+    stopTimesCount: number;
+  }> {
+    const directory = await unzipper.Open.buffer(buffer);
+    const fileMap = new Map(
+      directory.files
+        .filter((f) => f.type === 'File')
+        .map((f) => [f.path.replace(/^\.\//, '').split('/').pop()!, f]),
+    );
+
+    for (const required of REQUIRED_ZIP_FILES) {
+      if (!fileMap.has(required)) {
+        throw new Error(`Invalid GTFS ZIP: missing ${required}`);
+      }
+    }
+
+    return this.replaceFeedData(feedKey, async () => {
+      const stopsCount = await this.ingestStops(fileMap, mode, feedKey);
+      const routesCount = await this.ingestRoutes(fileMap, mode, feedKey);
+      if (routesCount < 1) {
+        throw new Error(
+          `ZIP validation failed for ${feedKey}: routes.txt missing or empty`,
+        );
+      }
+      const tripsCount = await this.ingestTrips(fileMap, mode, feedKey);
+      await this.ingestCalendar(fileMap, mode, feedKey);
+      await this.ingestCalendarDates(fileMap, mode, feedKey);
+      const stopTimesCount = await this.ingestStopTimes(fileMap, mode, feedKey);
+      return { stopsCount, routesCount, tripsCount, stopTimesCount };
+    });
+  }
+
+  /**
+   * Delete existing rows for feedKey then run inserts inside a transaction.
+   */
+  private async replaceFeedData<T>(
+    feedKey: string,
+    insertFn: () => Promise<T>,
+  ): Promise<T> {
+    return this.db.transaction(async (tx) => {
+      await tx.delete(gtfsStopRoute).where(eq(gtfsStopRoute.feedKey, feedKey));
+      await tx.delete(gtfsStopTime).where(eq(gtfsStopTime.feedKey, feedKey));
+      await tx
+        .delete(gtfsCalendarDate)
+        .where(eq(gtfsCalendarDate.feedKey, feedKey));
+      await tx.delete(gtfsCalendar).where(eq(gtfsCalendar.feedKey, feedKey));
+      await tx.delete(gtfsTrip).where(eq(gtfsTrip.feedKey, feedKey));
+      await tx.delete(gtfsRoute).where(eq(gtfsRoute.feedKey, feedKey));
+      await tx.delete(gtfsStop).where(eq(gtfsStop.feedKey, feedKey));
+
+      // Temporarily route inserts through the transaction connection.
+      const previousDb = this.db;
+      const mutable = this as unknown as { db: DrizzleDB };
+      mutable.db = tx as unknown as DrizzleDB;
+      try {
+        return await insertFn();
+      } finally {
+        mutable.db = previousDb;
+      }
+    });
   }
 
   private async parseCsvFromZipEntry(
@@ -111,7 +349,7 @@ export class GtfsStaticService {
     return new Promise((resolve, reject) => {
       parse(
         content,
-        { columns: true, skip_empty_lines: true, trim: true },
+        { columns: true, skip_empty_lines: true, trim: true, relax_column_count: true },
         (err, records: CsvRecord[]) => {
           if (err) reject(err);
           else resolve(records);
@@ -120,12 +358,64 @@ export class GtfsStaticService {
     });
   }
 
+  /** Stream-parse large CSV entries (stop_times) in batches. */
+  private async forEachCsvBatch(
+    entry: unzipper.File,
+    onBatch: (batch: CsvRecord[]) => Promise<void>,
+  ): Promise<number> {
+    let total = 0;
+    let batch: CsvRecord[] = [];
+    const stream = entry.stream() as Readable;
+
+    await new Promise<void>((resolve, reject) => {
+      const parser = parse({
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+        relax_column_count: true,
+      });
+
+      parser.on('readable', () => {
+        let record: CsvRecord;
+        while ((record = parser.read() as CsvRecord) != null) {
+          batch.push(record);
+          if (batch.length >= BATCH_SIZE) {
+            parser.pause();
+            const toFlush = batch;
+            batch = [];
+            total += toFlush.length;
+            onBatch(toFlush)
+              .then(() => parser.resume())
+              .catch(reject);
+          }
+        }
+      });
+      parser.on('error', reject);
+      parser.on('end', () => {
+        const finish = async () => {
+          if (batch.length > 0) {
+            total += batch.length;
+            await onBatch(batch);
+            batch = [];
+          }
+          resolve();
+        };
+        finish().catch(reject);
+      });
+      stream.on('error', reject);
+      stream.pipe(parser);
+    });
+
+    return total;
+  }
+
   private async ingestStops(
     fileMap: Map<string, unzipper.File>,
     mode: string,
-  ): Promise<void> {
+    feedKey: string,
+  ): Promise<number> {
     const entry = fileMap.get('stops.txt');
-    if (!entry) return;
+    if (!entry) return 0;
     const records = await this.parseCsvFromZipEntry(entry);
     for (let i = 0; i < records.length; i += BATCH_SIZE) {
       const batch = records.slice(i, i + BATCH_SIZE).map((r) => ({
@@ -141,6 +431,7 @@ export class GtfsStaticService {
           : null,
         platformCode: r['platform_code'] ?? null,
         mode,
+        feedKey,
         updatedAt: new Date(),
       }));
       await this.db
@@ -158,19 +449,22 @@ export class GtfsStaticService {
             wheelchairBoarding: sql`excluded.wheelchair_boarding`,
             platformCode: sql`excluded.platform_code`,
             mode: sql`excluded.mode`,
+            feedKey: sql`excluded.feed_key`,
             updatedAt: sql`excluded.updated_at`,
           },
         });
     }
-    this.logger.debug(`Ingested ${records.length} stops for ${mode}`);
+    this.logger.debug(`Ingested ${records.length} stops for ${feedKey}`);
+    return records.length;
   }
 
   private async ingestRoutes(
     fileMap: Map<string, unzipper.File>,
     mode: string,
-  ): Promise<void> {
+    feedKey: string,
+  ): Promise<number> {
     const entry = fileMap.get('routes.txt');
-    if (!entry) return;
+    if (!entry) return 0;
     const records = await this.parseCsvFromZipEntry(entry);
     for (let i = 0; i < records.length; i += BATCH_SIZE) {
       const batch = records.slice(i, i + BATCH_SIZE).map((r) => ({
@@ -182,6 +476,7 @@ export class GtfsStaticService {
         routeColor: r['route_color'] ?? null,
         routeTextColor: r['route_text_color'] ?? null,
         mode,
+        feedKey,
         updatedAt: new Date(),
       }));
       await this.db
@@ -197,19 +492,22 @@ export class GtfsStaticService {
             routeColor: sql`excluded.route_color`,
             routeTextColor: sql`excluded.route_text_color`,
             mode: sql`excluded.mode`,
+            feedKey: sql`excluded.feed_key`,
             updatedAt: sql`excluded.updated_at`,
           },
         });
     }
-    this.logger.debug(`Ingested ${records.length} routes for ${mode}`);
+    this.logger.debug(`Ingested ${records.length} routes for ${feedKey}`);
+    return records.length;
   }
 
   private async ingestTrips(
     fileMap: Map<string, unzipper.File>,
     mode: string,
-  ): Promise<void> {
+    feedKey: string,
+  ): Promise<number> {
     const entry = fileMap.get('trips.txt');
-    if (!entry) return;
+    if (!entry) return 0;
     const records = await this.parseCsvFromZipEntry(entry);
     for (let i = 0; i < records.length; i += BATCH_SIZE) {
       const batch = records.slice(i, i + BATCH_SIZE).map((r) => ({
@@ -224,6 +522,7 @@ export class GtfsStaticService {
           ? parseInt(r['wheelchair_accessible'])
           : null,
         mode,
+        feedKey,
         updatedAt: new Date(),
       }));
       await this.db
@@ -240,16 +539,19 @@ export class GtfsStaticService {
             shapeId: sql`excluded.shape_id`,
             wheelchairAccessible: sql`excluded.wheelchair_accessible`,
             mode: sql`excluded.mode`,
+            feedKey: sql`excluded.feed_key`,
             updatedAt: sql`excluded.updated_at`,
           },
         });
     }
-    this.logger.debug(`Ingested ${records.length} trips for ${mode}`);
+    this.logger.debug(`Ingested ${records.length} trips for ${feedKey}`);
+    return records.length;
   }
 
   private async ingestCalendar(
     fileMap: Map<string, unzipper.File>,
     mode: string,
+    feedKey: string,
   ): Promise<void> {
     const entry = fileMap.get('calendar.txt');
     if (!entry) return;
@@ -267,6 +569,7 @@ export class GtfsStaticService {
         startDate: r['start_date'] ?? '',
         endDate: r['end_date'] ?? '',
         mode,
+        feedKey,
         updatedAt: new Date(),
       }));
       await this.db
@@ -285,6 +588,7 @@ export class GtfsStaticService {
             startDate: sql`excluded.start_date`,
             endDate: sql`excluded.end_date`,
             mode: sql`excluded.mode`,
+            feedKey: sql`excluded.feed_key`,
             updatedAt: sql`excluded.updated_at`,
           },
         });
@@ -294,6 +598,7 @@ export class GtfsStaticService {
   private async ingestCalendarDates(
     fileMap: Map<string, unzipper.File>,
     mode: string,
+    feedKey: string,
   ): Promise<void> {
     const entry = fileMap.get('calendar_dates.txt');
     if (!entry) return;
@@ -305,23 +610,34 @@ export class GtfsStaticService {
         date: r['date'] ?? '',
         exceptionType: parseInt(r['exception_type'] ?? '0'),
         mode,
+        feedKey,
       }));
       await this.db
         .insert(gtfsCalendarDate)
         .values(batch)
-        .onConflictDoNothing();
+        .onConflictDoUpdate({
+          target: gtfsCalendarDate.id,
+          set: {
+            serviceId: sql`excluded.service_id`,
+            date: sql`excluded.date`,
+            exceptionType: sql`excluded.exception_type`,
+            mode: sql`excluded.mode`,
+            feedKey: sql`excluded.feed_key`,
+          },
+        });
     }
   }
 
   private async ingestStopTimes(
     fileMap: Map<string, unzipper.File>,
     mode: string,
-  ): Promise<void> {
+    feedKey: string,
+  ): Promise<number> {
     const entry = fileMap.get('stop_times.txt');
-    if (!entry) return;
-    const records = await this.parseCsvFromZipEntry(entry);
-    for (let i = 0; i < records.length; i += BATCH_SIZE) {
-      const batch = records.slice(i, i + BATCH_SIZE).map((r) => ({
+    if (!entry) return 0;
+
+    const total = await this.forEachCsvBatch(entry, async (records) => {
+      const batch = records.map((r) => ({
         id: `${r['trip_id']}_${r['stop_sequence']}`,
         tripId: r['trip_id'] ?? '',
         arrivalTime: r['arrival_time'] ?? null,
@@ -331,10 +647,29 @@ export class GtfsStaticService {
         pickupType: r['pickup_type'] ? parseInt(r['pickup_type']) : null,
         dropOffType: r['drop_off_type'] ? parseInt(r['drop_off_type']) : null,
         mode,
+        feedKey,
       }));
-      await this.db.insert(gtfsStopTime).values(batch).onConflictDoNothing();
-    }
-    this.logger.debug(`Ingested ${records.length} stop_times for ${mode}`);
+      await this.db
+        .insert(gtfsStopTime)
+        .values(batch)
+        .onConflictDoUpdate({
+          target: gtfsStopTime.id,
+          set: {
+            tripId: sql`excluded.trip_id`,
+            arrivalTime: sql`excluded.arrival_time`,
+            departureTime: sql`excluded.departure_time`,
+            stopId: sql`excluded.stop_id`,
+            stopSequence: sql`excluded.stop_sequence`,
+            pickupType: sql`excluded.pickup_type`,
+            dropOffType: sql`excluded.drop_off_type`,
+            mode: sql`excluded.mode`,
+            feedKey: sql`excluded.feed_key`,
+          },
+        });
+    });
+
+    this.logger.debug(`Ingested ${total} stop_times for ${feedKey}`);
+    return total;
   }
 
   /**
@@ -433,6 +768,154 @@ export class GtfsStaticService {
     const ids = rows.map((r) => r.routeId).filter(Boolean);
     await this.cache.set(cacheKey, ids, CacheTTL.INTERCITY_ROUTES);
     return new Set(ids);
+  }
+
+  /**
+   * Resolves stopId → routeIds via gtfs_stop_routes (for alert entity enrichment).
+   */
+  async getRouteIdsForStopIds(
+    stopIds: string[],
+  ): Promise<Map<string, string[]>> {
+    const unique = [...new Set(stopIds.filter(Boolean))];
+    const result = new Map<string, string[]>();
+    if (unique.length === 0) return result;
+
+    const rows = await this.db
+      .select({
+        stopId: gtfsStopRoute.stopId,
+        routeId: gtfsStopRoute.routeId,
+      })
+      .from(gtfsStopRoute)
+      .where(inArray(gtfsStopRoute.stopId, unique));
+
+    for (const row of rows) {
+      const list = result.get(row.stopId) ?? [];
+      list.push(row.routeId);
+      result.set(row.stopId, list);
+    }
+    return result;
+  }
+
+  /**
+   * Resolves tripId → routeId for trips missing routeId in realtime feeds.
+   */
+  async getRouteIdsForTripIds(
+    tripIds: string[],
+  ): Promise<Map<string, string>> {
+    const unique = [...new Set(tripIds.filter(Boolean))];
+    const result = new Map<string, string>();
+    if (unique.length === 0) return result;
+
+    const rows = await this.db
+      .select({
+        tripId: gtfsTrip.tripId,
+        routeId: gtfsTrip.routeId,
+      })
+      .from(gtfsTrip)
+      .where(inArray(gtfsTrip.tripId, unique));
+
+    for (const row of rows) {
+      if (row.routeId) result.set(row.tripId, row.routeId);
+    }
+    return result;
+  }
+
+  /**
+   * Counts GTFS trips scheduled to run today (Sydney calendar), grouped by
+   * mode|line for comparison against realtime tracked trips.
+   */
+  async getScheduledTripCountsByLine(
+    at: Date = new Date(),
+  ): Promise<Map<string, number>> {
+    const day = sydneyLocalDate(at);
+    const cacheKey = `gtfs:scheduled_trips_by_line:${day}`;
+    const cached = await this.cache.get<Record<string, number>>(cacheKey);
+    if (cached) return new Map(Object.entries(cached));
+
+    const yyyymmdd = day.replace(/-/g, '');
+    const dow = new Date(`${day}T12:00:00Z`).getUTCDay(); // 0=Sun
+    const dowColumn = [
+      gtfsCalendar.sunday,
+      gtfsCalendar.monday,
+      gtfsCalendar.tuesday,
+      gtfsCalendar.wednesday,
+      gtfsCalendar.thursday,
+      gtfsCalendar.friday,
+      gtfsCalendar.saturday,
+    ][dow];
+
+    const routeMeta = await this.getRouteMetadataMap();
+
+    // Regular calendar services active today
+    const regular = await this.db
+      .select({
+        tripId: gtfsTrip.tripId,
+        routeId: gtfsTrip.routeId,
+        mode: gtfsTrip.mode,
+        serviceId: gtfsTrip.serviceId,
+      })
+      .from(gtfsTrip)
+      .innerJoin(
+        gtfsCalendar,
+        eq(gtfsTrip.serviceId, gtfsCalendar.serviceId),
+      )
+      .where(
+        sql`${gtfsCalendar.startDate} <= ${yyyymmdd}
+            AND ${gtfsCalendar.endDate} >= ${yyyymmdd}
+            AND ${dowColumn} = 1`,
+      );
+
+    // Exception removals (type 2) and additions (type 1) for today
+    const exceptions = await this.db
+      .select({
+        serviceId: gtfsCalendarDate.serviceId,
+        exceptionType: gtfsCalendarDate.exceptionType,
+      })
+      .from(gtfsCalendarDate)
+      .where(eq(gtfsCalendarDate.date, yyyymmdd));
+
+    const removed = new Set(
+      exceptions.filter((e) => e.exceptionType === 2).map((e) => e.serviceId),
+    );
+    const addedServiceIds = exceptions
+      .filter((e) => e.exceptionType === 1)
+      .map((e) => e.serviceId);
+
+    const addedTrips =
+      addedServiceIds.length > 0
+        ? await this.db
+            .select({
+              tripId: gtfsTrip.tripId,
+              routeId: gtfsTrip.routeId,
+              mode: gtfsTrip.mode,
+              serviceId: gtfsTrip.serviceId,
+            })
+            .from(gtfsTrip)
+            .where(inArray(gtfsTrip.serviceId, addedServiceIds))
+        : [];
+
+    const counts = new Map<string, number>();
+    const bump = (mode: string | null, routeId: string | null) => {
+      if (!routeId || !mode) return;
+      const line = resolveLine(routeId, null, routeMeta);
+      const key = `${mode}|${line}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    };
+
+    for (const trip of regular) {
+      if (trip.serviceId && removed.has(trip.serviceId)) continue;
+      bump(trip.mode, trip.routeId);
+    }
+    for (const trip of addedTrips) {
+      bump(trip.mode, trip.routeId);
+    }
+
+    await this.cache.set(
+      cacheKey,
+      Object.fromEntries(counts),
+      CacheTTL.SCHEDULED_TRIPS,
+    );
+    return counts;
   }
 
   async getRoutes(
@@ -551,27 +1034,79 @@ export class GtfsStaticService {
     return result[0]?.total ?? 0;
   }
 
+  async getIngestStatus(): Promise<{
+    feeds: typeof GTFS_SCHEDULE_FEEDS;
+    lastRuns: {
+      feedKey: string;
+      success: boolean | null;
+      finishedAt: Date | null;
+      routesCount: number | null;
+      error: string | null;
+      skippedUnchanged: boolean | null;
+    }[];
+  }> {
+    const runs = await this.db
+      .select()
+      .from(gtfsIngestFeedRun)
+      .orderBy(sql`${gtfsIngestFeedRun.startedAt} desc`)
+      .limit(200);
+
+    const latestByFeed = new Map<string, (typeof runs)[number]>();
+    for (const run of runs) {
+      if (!latestByFeed.has(run.feedKey)) {
+        latestByFeed.set(run.feedKey, run);
+      }
+    }
+
+    return {
+      feeds: GTFS_SCHEDULE_FEEDS,
+      lastRuns: [...latestByFeed.values()].map((r) => ({
+        feedKey: r.feedKey,
+        success: r.success,
+        finishedAt: r.finishedAt,
+        routesCount: r.routesCount,
+        error: r.error,
+        skippedUnchanged: r.skippedUnchanged,
+      })),
+    };
+  }
+
   /**
    * Refreshes the mapping between stops and routes.
    * This is a heavy operation that performs a DISTINCT join across stop_times and trips.
    * It should be called after GTFS static data has been updated.
    */
-  async refreshStopRoutesMapping(mode?: string): Promise<void> {
+  async refreshStopRoutesMapping(
+    mode?: string,
+    feedKey?: string,
+  ): Promise<void> {
     this.logger.log(
-      `Refreshing stop-routes mapping${mode ? ` for mode: ${mode}` : ''}...`,
+      `Refreshing stop-routes mapping${mode ? ` for mode: ${mode}` : ''}${feedKey ? ` feed: ${feedKey}` : ''}...`,
     );
 
-    // We use a raw SQL approach for efficiency here as Drizzle's INSERT INTO ... SELECT
-    // can be more concisely expressed this way for complex DISTINCT joins.
-    const modeClause = mode ? sql`WHERE st.mode = ${mode}` : sql``;
+    if (feedKey) {
+      await this.db
+        .delete(gtfsStopRoute)
+        .where(eq(gtfsStopRoute.feedKey, feedKey));
+    }
+
+    const whereParts = [];
+    if (mode) whereParts.push(sql`st.mode = ${mode}`);
+    if (feedKey) whereParts.push(sql`st.feed_key = ${feedKey}`);
+    const modeClause =
+      whereParts.length > 0
+        ? sql`WHERE ${sql.join(whereParts, sql` AND `)}`
+        : sql``;
 
     await this.db.execute(sql`
-      INSERT INTO ${gtfsStopRoute} (stop_id, route_id, mode)
-      SELECT DISTINCT st.stop_id, t.route_id, st.mode
+      INSERT INTO ${gtfsStopRoute} (stop_id, route_id, mode, feed_key)
+      SELECT DISTINCT st.stop_id, t.route_id, st.mode, st.feed_key
       FROM ${gtfsStopTime} st
       JOIN ${gtfsTrip} t ON st.trip_id = t.trip_id
       ${modeClause}
-      ON CONFLICT (stop_id, route_id) DO NOTHING
+      ON CONFLICT (stop_id, route_id) DO UPDATE SET
+        mode = excluded.mode,
+        feed_key = excluded.feed_key
     `);
 
     this.logger.log(`Completed stop-routes mapping refresh.`);

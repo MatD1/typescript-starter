@@ -1,31 +1,19 @@
 /**
  * GTFS route-family → rider-facing line badge (T1…T9, CCN, M1…).
- * Mirrors the Flutter app's lib/core/utils/line_identity.dart — keep in sync.
+ * Canonical shared map: line-identity.map.json (also mirrored in Flutter
+ * lib/core/utils/line_identity.dart — keep all three in sync).
  */
-const FAMILY_TO_LINE: Record<string, string> = {
-  NSN: 'T1',
-  WST: 'T1',
-  NTHW: 'T1',
-  IWL: 'T2',
-  LEP: 'T2',
-  BNK: 'T3',
-  LVP: 'T3',
-  ESI: 'T4',
-  ILL: 'T4',
-  CMB: 'T5',
-  CAR: 'T6',
-  LDB: 'T6',
-  OLY: 'T7',
-  APS: 'T8',
-  NTH: 'T9',
-  BMT: 'BMT',
-  CCN: 'CCN',
-  HUN: 'HUN',
-  SCO: 'SCO',
-  SHL: 'SHL',
-  M1: 'M1',
-  SMNW: 'M1',
-  MTRO: 'M1',
+import familyMap from './line-identity.map.json';
+
+const FAMILY_TO_LINE: Record<string, string> = Object.fromEntries(
+  Object.entries(familyMap).filter(([k]) => !k.startsWith('_')),
+) as Record<string, string>;
+
+
+export type RouteMetadata = {
+  lineCode: string;
+  routeColour?: string;
+  routeName?: string;
 };
 
 /**
@@ -48,3 +36,20 @@ export function lineFor(
   const family = routeId?.toUpperCase().split(/[._\-]/)[0];
   return family && family.length > 0 && family.length <= 6 ? family : 'OTHER';
 }
+
+/**
+ * Resolves a line badge, preferring GTFS static route_short_name when available.
+ */
+export function resolveLine(
+  routeId: string | undefined | null,
+  tripId: string | undefined | null,
+  routeMetadata?: Map<string, RouteMetadata>,
+): string {
+  if (routeId && routeMetadata?.has(routeId)) {
+    const code = routeMetadata.get(routeId)!.lineCode?.trim();
+    if (code) return code.toUpperCase();
+  }
+  return lineFor(routeId, tripId);
+}
+
+export { FAMILY_TO_LINE };

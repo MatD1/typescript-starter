@@ -1,4 +1,5 @@
 import {
+  boolean,
   doublePrecision,
   index,
   integer,
@@ -21,22 +22,31 @@ export const gtfsStop = pgTable(
     wheelchairBoarding: integer('wheelchair_boarding'),
     platformCode: text('platform_code'),
     mode: text('mode'),
+    feedKey: text('feed_key'),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
-  (t) => [index('gtfs_stops_name_idx').on(t.stopName)],
+  (t) => [
+    index('gtfs_stops_name_idx').on(t.stopName),
+    index('gtfs_stops_feed_key_idx').on(t.feedKey),
+  ],
 );
 
-export const gtfsRoute = pgTable('gtfs_routes', {
-  routeId: text('route_id').primaryKey(),
-  agencyId: text('agency_id'),
-  routeShortName: text('route_short_name'),
-  routeLongName: text('route_long_name'),
-  routeType: integer('route_type'),
-  routeColor: text('route_color'),
-  routeTextColor: text('route_text_color'),
-  mode: text('mode'),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
+export const gtfsRoute = pgTable(
+  'gtfs_routes',
+  {
+    routeId: text('route_id').primaryKey(),
+    agencyId: text('agency_id'),
+    routeShortName: text('route_short_name'),
+    routeLongName: text('route_long_name'),
+    routeType: integer('route_type'),
+    routeColor: text('route_color'),
+    routeTextColor: text('route_text_color'),
+    mode: text('mode'),
+    feedKey: text('feed_key'),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('gtfs_routes_feed_key_idx').on(t.feedKey)],
+);
 
 export const gtfsTrip = pgTable(
   'gtfs_trips',
@@ -50,33 +60,47 @@ export const gtfsTrip = pgTable(
     shapeId: text('shape_id'),
     wheelchairAccessible: integer('wheelchair_accessible'),
     mode: text('mode'),
+    feedKey: text('feed_key'),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
-  (t) => [index('gtfs_trips_route_idx').on(t.routeId)],
+  (t) => [
+    index('gtfs_trips_route_idx').on(t.routeId),
+    index('gtfs_trips_feed_key_idx').on(t.feedKey),
+  ],
 );
 
-export const gtfsCalendar = pgTable('gtfs_calendar', {
-  serviceId: text('service_id').primaryKey(),
-  monday: integer('monday').notNull(),
-  tuesday: integer('tuesday').notNull(),
-  wednesday: integer('wednesday').notNull(),
-  thursday: integer('thursday').notNull(),
-  friday: integer('friday').notNull(),
-  saturday: integer('saturday').notNull(),
-  sunday: integer('sunday').notNull(),
-  startDate: text('start_date').notNull(),
-  endDate: text('end_date').notNull(),
-  mode: text('mode'),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
+export const gtfsCalendar = pgTable(
+  'gtfs_calendar',
+  {
+    serviceId: text('service_id').primaryKey(),
+    monday: integer('monday').notNull(),
+    tuesday: integer('tuesday').notNull(),
+    wednesday: integer('wednesday').notNull(),
+    thursday: integer('thursday').notNull(),
+    friday: integer('friday').notNull(),
+    saturday: integer('saturday').notNull(),
+    sunday: integer('sunday').notNull(),
+    startDate: text('start_date').notNull(),
+    endDate: text('end_date').notNull(),
+    mode: text('mode'),
+    feedKey: text('feed_key'),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (t) => [index('gtfs_calendar_feed_key_idx').on(t.feedKey)],
+);
 
-export const gtfsCalendarDate = pgTable('gtfs_calendar_dates', {
-  id: text('id').primaryKey(),
-  serviceId: text('service_id').notNull(),
-  date: text('date').notNull(),
-  exceptionType: integer('exception_type').notNull(),
-  mode: text('mode'),
-});
+export const gtfsCalendarDate = pgTable(
+  'gtfs_calendar_dates',
+  {
+    id: text('id').primaryKey(),
+    serviceId: text('service_id').notNull(),
+    date: text('date').notNull(),
+    exceptionType: integer('exception_type').notNull(),
+    mode: text('mode'),
+    feedKey: text('feed_key'),
+  },
+  (t) => [index('gtfs_calendar_dates_feed_key_idx').on(t.feedKey)],
+);
 
 export const gtfsStopTime = pgTable(
   'gtfs_stop_times',
@@ -90,10 +114,12 @@ export const gtfsStopTime = pgTable(
     pickupType: integer('pickup_type'),
     dropOffType: integer('drop_off_type'),
     mode: text('mode'),
+    feedKey: text('feed_key'),
   },
   (t) => [
     index('gtfs_stop_times_trip_idx').on(t.tripId),
     index('gtfs_stop_times_stop_idx').on(t.stopId),
+    index('gtfs_stop_times_feed_key_idx').on(t.feedKey),
   ],
 );
 
@@ -103,10 +129,39 @@ export const gtfsStopRoute = pgTable(
     stopId: text('stop_id').notNull(),
     routeId: text('route_id').notNull(),
     mode: text('mode'),
+    feedKey: text('feed_key'),
   },
   (t) => [
     primaryKey({ columns: [t.stopId, t.routeId] }),
     index('gtfs_stop_routes_stop_idx').on(t.stopId),
     index('gtfs_stop_routes_route_idx').on(t.routeId),
+    index('gtfs_stop_routes_feed_key_idx').on(t.feedKey),
+  ],
+);
+
+/** One row per feed per ingest attempt */
+export const gtfsIngestFeedRun = pgTable(
+  'gtfs_ingest_feed_runs',
+  {
+    id: text('id').primaryKey(),
+    feedKey: text('feed_key').notNull(),
+    logicalMode: text('logical_mode').notNull(),
+    startedAt: timestamp('started_at').notNull().defaultNow(),
+    finishedAt: timestamp('finished_at'),
+    success: boolean('success'),
+    skippedUnchanged: boolean('skipped_unchanged').default(false),
+    headLastModified: text('head_last_modified'),
+    s3Key: text('s3_key'),
+    bytes: integer('bytes'),
+    httpStatus: integer('http_status'),
+    routesCount: integer('routes_count'),
+    tripsCount: integer('trips_count'),
+    stopsCount: integer('stops_count'),
+    stopTimesCount: integer('stop_times_count'),
+    error: text('error'),
+  },
+  (t) => [
+    index('gtfs_ingest_feed_runs_feed_key_idx').on(t.feedKey),
+    index('gtfs_ingest_feed_runs_started_idx').on(t.startedAt),
   ],
 );

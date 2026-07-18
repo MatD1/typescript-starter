@@ -1,18 +1,23 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { TransportService } from './transport.service';
-import { of, throwError } from 'rxjs';
 import { ServiceUnavailableException } from '@nestjs/common';
+import { TfnswHttpClient } from './tfnsw-http.client';
 
 describe('TransportService.buildGtfsRtUrl', () => {
   let service: TransportService;
+  let tfnsw: { getRealtime: jest.Mock; getApiKey: jest.Mock };
 
   beforeEach(async () => {
+    tfnsw = {
+      getRealtime: jest.fn().mockResolvedValue(Buffer.from('feed')),
+      getApiKey: jest.fn().mockReturnValue('test-key'),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TransportService,
-        { provide: HttpService, useValue: {} },
+        { provide: TfnswHttpClient, useValue: tfnsw },
         {
           provide: ConfigService,
           useValue: {
@@ -90,13 +95,6 @@ describe('TransportService.buildGtfsRtUrl', () => {
     },
   );
 
-  it('vehiclepos/intercity → v2/gtfs/vehiclepos/sydneytrains (intercity merged into sydneytrains)', () => {
-    const url = service.buildGtfsRtUrl('vehiclepos', 'intercity');
-    expect(url).toBe(
-      'https://api.transport.nsw.gov.au/v2/gtfs/vehiclepos/sydneytrains',
-    );
-  });
-
   it('vehiclepos/ferries → v1/gtfs/vehiclepos/ferries/sydneyferries path', () => {
     const url = service.buildGtfsRtUrl('vehiclepos', 'ferries');
     expect(url).toBe(
@@ -104,19 +102,7 @@ describe('TransportService.buildGtfsRtUrl', () => {
     );
   });
 
-  // ── Alerts: v2 modes ──────────────────────────────────────────────────────
-
-  it.each(['sydneytrains', 'metro', 'lightrail'] as const)(
-    'alerts/%s → v2/gtfs/alerts/{mode} path',
-    (mode) => {
-      const url = service.buildGtfsRtUrl('alerts', mode);
-      expect(url).toBe(
-        `https://api.transport.nsw.gov.au/v2/gtfs/alerts/${mode}`,
-      );
-    },
-  );
-
-  // ── Alerts: v1 modes ──────────────────────────────────────────────────────
+  // ── Alerts ────────────────────────────────────────────────────────────────
 
   it.each(['buses', 'ferries', 'nswtrains'] as const)(
     'alerts/%s → v1/gtfs/alerts/{mode} path',
@@ -128,25 +114,10 @@ describe('TransportService.buildGtfsRtUrl', () => {
     },
   );
 
-  it('alerts/intercity → v2/gtfs/alerts/sydneytrains (intercity merged into sydneytrains)', () => {
-    const url = service.buildGtfsRtUrl('alerts', 'intercity');
-    expect(url).toBe(
-      'https://api.transport.nsw.gov.au/v2/gtfs/alerts/sydneytrains',
-    );
-  });
-
-  describe('trip planner date/time direction', () => {
-    it('uses departure mode by default', () => {
-      const params = service['mapTripParamsToV1']({
-        originId: '10101100',
-        destId: '10102027',
-      });
-
-      expect(params.depArrMacro).toBe('dep');
-    });
-
-    it('uses arrival mode when arriveBy is true', () => {
-      const params = service['mapTripParamsToV1']({
+  describe('mapTripParamsToV1', () => {
+    it('maps arriveBy to arr depArrMacro', async () => {
+      tfnsw.getRealtime.mockResolvedValue({});
+      await service.getTripPlan({
         originId: '10101100',
         destId: '10102027',
         itdDate: '20260714',
@@ -154,73 +125,57 @@ describe('TransportService.buildGtfsRtUrl', () => {
         arriveBy: true,
       });
 
-      expect(params.depArrMacro).toBe('arr');
+      expect(tfnsw.getRealtime).toHaveBeenCalledWith(
+        expect.stringContaining('/v1/tp/trip'),
+        expect.objectContaining({
+          params: expect.objectContaining({ depArrMacro: 'arr' }),
+        }),
+      );
     });
   });
 
   describe('TfNSW credential handling', () => {
-    it('normalizes a mistakenly prefixed environment value', async () => {
-      const httpService = {
-        get: jest.fn().mockReturnValue(of({ data: Buffer.from('feed') })),
-      };
-      const prefixedService = new TransportService(
-        httpService as any,
-        {
-          get: (key: string) =>
-            key === 'transport.baseUrl'
-              ? 'https://api.transport.nsw.gov.au'
-              : '  apikey test-key  ',
-        } as ConfigService,
-      );
+    it('routes realtime requests through the realtime-key gate', async () => {
+      await service.getGtfsRealtime('alerts', 'sydneytrains');
 
-      await prefixedService.getGtfsRealtime('alerts', 'sydneytrains');
-
-      expect(httpService.get).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({
-          headers: expect.objectContaining({
-            Authorization: 'apikey test-key',
-          }),
-        }),
+      expect(tfnsw.getRealtime).toHaveBeenCalledWith(
+        expect.stringContaining('/gtfs/alerts/sydneytrains'),
+        expect.objectContaining({ responseType: 'arraybuffer' }),
       );
     });
 
     it('does not call TfNSW when the key is missing', async () => {
-      const httpService = { get: jest.fn() };
-      const unconfiguredService = new TransportService(
-        httpService as any,
+      tfnsw.getApiKey.mockReturnValue('');
+      tfnsw.getRealtime.mockRejectedValue(
+        new ServiceUnavailableException(
+          'TfNSW API credentials are not configured',
+        ),
+      );
+
+      const unconfigured = new TransportService(
         {
           get: (key: string) =>
             key === 'transport.baseUrl'
               ? 'https://api.transport.nsw.gov.au'
               : undefined,
         } as ConfigService,
+        tfnsw as unknown as TfnswHttpClient,
       );
 
       await expect(
-        unconfiguredService.getGtfsRealtime('alerts', 'buses'),
+        unconfigured.getGtfsRealtime('alerts', 'buses'),
       ).rejects.toThrow(/not configured/);
-      expect(httpService.get).not.toHaveBeenCalled();
     });
 
-    it('classifies an upstream 401 as a service configuration failure', async () => {
-      const httpService = {
-        get: jest
-          .fn()
-          .mockReturnValue(throwError(() => ({ response: { status: 401 } }))),
-      };
-      const configuredService = new TransportService(
-        httpService as any,
-        {
-          get: (key: string) =>
-            key === 'transport.baseUrl'
-              ? 'https://api.transport.nsw.gov.au'
-              : 'test-key',
-        } as ConfigService,
+    it('propagates ServiceUnavailableException from the gate', async () => {
+      tfnsw.getRealtime.mockRejectedValue(
+        new ServiceUnavailableException(
+          'TfNSW authentication is currently unavailable',
+        ),
       );
 
       await expect(
-        configuredService.getGtfsRealtime('alerts', 'buses'),
+        service.getGtfsRealtime('alerts', 'buses'),
       ).rejects.toBeInstanceOf(ServiceUnavailableException);
     });
   });

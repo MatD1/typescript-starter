@@ -1,10 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@nestjs/axios';
 import { DRIZZLE } from '../database/database.module';
 import { GtfsStaticService } from './gtfs-static.service';
 import { CacheService } from '../cache/cache.service';
 import { gtfsRoute } from '../database/schema/gtfs.schema';
+import { TfnswHttpClient } from '../transport/tfnsw-http.client';
+import { S3Service } from '../storage/s3.service';
 
 describe('GtfsStaticService', () => {
   let service: GtfsStaticService;
@@ -38,10 +38,13 @@ describe('GtfsStaticService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         GtfsStaticService,
-        { provide: ConfigService, useValue: { get: () => 'test-key' } },
-        { provide: HttpService, useValue: {} },
         { provide: DRIZZLE, useValue: mockDb },
         { provide: CacheService, useValue: mockCache },
+        { provide: TfnswHttpClient, useValue: {} },
+        {
+          provide: S3Service,
+          useValue: { isEnabled: () => false },
+        },
       ],
     }).compile();
 
@@ -127,13 +130,21 @@ describe('GtfsStaticService', () => {
 
       const result = await service.getRouteMetadataMap();
 
-      expect(result.get('T1')).toEqual({ lineCode: 'T1', routeColour: '009B77' });
-      expect(result.get('BMT_1')).toEqual({ lineCode: 'BMT', routeColour: undefined });
+      expect(result.get('T1')).toEqual({
+        lineCode: 'T1',
+        routeColour: '009B77',
+        routeName: 'T1',
+      });
+      expect(result.get('BMT_1')).toEqual({
+        lineCode: 'BMT',
+        routeColour: undefined,
+        routeName: 'BMT',
+      });
       expect(mockCache.set).toHaveBeenCalledWith(
         'gtfs:route_metadata',
         expect.objectContaining({
-          T1: { lineCode: 'T1', routeColour: '009B77' },
-          BMT_1: { lineCode: 'BMT', routeColour: undefined },
+          T1: { lineCode: 'T1', routeColour: '009B77', routeName: 'T1' },
+          BMT_1: { lineCode: 'BMT', routeColour: undefined, routeName: 'BMT' },
         }),
         expect.any(Number),
       );

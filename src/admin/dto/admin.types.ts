@@ -266,12 +266,36 @@ export class GtfsTableCount {
 }
 
 @ObjectType()
+export class GtfsFeedRunStatus {
+  @Field()
+  feedKey!: string;
+
+  @Field({ nullable: true })
+  success?: boolean;
+
+  @Field({ nullable: true })
+  finishedAt?: string;
+
+  @Field({ nullable: true })
+  routesCount?: number;
+
+  @Field({ nullable: true })
+  error?: string;
+
+  @Field({ nullable: true })
+  skippedUnchanged?: boolean;
+}
+
+@ObjectType()
 export class GtfsStatus {
   @Field({ nullable: true })
   lastIngest?: string;
 
   @Field(() => [GtfsTableCount])
   tableCounts!: GtfsTableCount[];
+
+  @Field(() => [GtfsFeedRunStatus], { nullable: true })
+  feedRuns?: GtfsFeedRunStatus[];
 }
 
 @ObjectType()
@@ -281,6 +305,12 @@ export class GtfsIngestResult {
 
   @Field(() => [String])
   modesIngested!: string[];
+
+  @Field(() => [String], { nullable: true })
+  feedsIngested?: string[];
+
+  @Field(() => [String], { nullable: true })
+  failedFeeds?: string[];
 }
 
 // ─── Health Types ─────────────────────────────────────────────────────────────
