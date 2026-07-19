@@ -86,7 +86,7 @@ export class TransportService {
    *   v2/gtfs/realtime/{mode}  — sydneytrains, metro, lightrail
    *   v1/gtfs/realtime/{mode}  — buses, ferries, nswtrains, intercity
    *
-   * Vehicle positions and alerts use the same version split:
+   * Vehicle positions use a version split; alerts are v2-only (v1 retired):
    *   v2/gtfs/{feedType}/{path}  — sydneytrains, metro, lightrail
    *   v1/gtfs/{feedType}/{path}  — buses, ferries, nswtrains, intercity
    * Some modes need path overrides (e.g. lightrail/innerwest, ferries/sydneyferries).
@@ -99,12 +99,14 @@ export class TransportService {
       const version = TRIP_UPDATES_V2_MODES.has(effectiveMode) ? 'v2' : 'v1';
       return `${this.baseUrl}/${version}/gtfs/realtime/${effectiveMode}`;
     }
-    if (feedType === 'vehiclepos' || feedType === 'alerts') {
+    if (feedType === 'alerts') {
+      // TfNSW retired the v1 alerts products (v1 now 401s as
+      // "unauthenticated"); all modes are served from v2.
+      return `${this.baseUrl}/v2/gtfs/alerts/${effectiveMode}`;
+    }
+    if (feedType === 'vehiclepos') {
       const version = VEHICLE_POS_V2_MODES.has(effectiveMode) ? 'v2' : 'v1';
-      const path =
-        feedType === 'vehiclepos'
-          ? (MODE_TO_VEHICLEPOS_PATH[effectiveMode] ?? effectiveMode)
-          : effectiveMode;
+      const path = MODE_TO_VEHICLEPOS_PATH[effectiveMode] ?? effectiveMode;
       return `${this.baseUrl}/${version}/gtfs/${feedType}/${path}`;
     }
     return `${this.baseUrl}/v2/gtfs/${feedType}/${effectiveMode}`;

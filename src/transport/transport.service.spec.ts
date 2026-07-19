@@ -104,12 +104,12 @@ describe('TransportService.buildGtfsRtUrl', () => {
 
   // ── Alerts ────────────────────────────────────────────────────────────────
 
-  it.each(['buses', 'ferries', 'nswtrains'] as const)(
-    'alerts/%s → v1/gtfs/alerts/{mode} path',
+  it.each(['buses', 'ferries', 'nswtrains', 'sydneytrains'] as const)(
+    'alerts/%s → v2/gtfs/alerts/{mode} path (v1 retired, 401s)',
     (mode) => {
       const url = service.buildGtfsRtUrl('alerts', mode);
       expect(url).toBe(
-        `https://api.transport.nsw.gov.au/v1/gtfs/alerts/${mode}`,
+        `https://api.transport.nsw.gov.au/v2/gtfs/alerts/${mode}`,
       );
     },
   );

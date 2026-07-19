@@ -201,7 +201,13 @@ export class StopObject {
 
 @ObjectType()
 export class DepartureObject {
-  // internal tripID to power GraphQL data loader
+  @ApiPropertyOptional({
+    description: 'Realtime/scheduled trip id — lets clients open live tracking',
+  })
+  @Field({
+    nullable: true,
+    description: 'Realtime/scheduled trip id — lets clients open live tracking',
+  })
   tripId?: string;
 
   @ApiPropertyOptional()

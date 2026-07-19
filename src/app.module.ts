@@ -29,6 +29,7 @@ import { TripPlannerModule } from './trip-planner/trip-planner.module';
 import { StationsModule } from './stations/stations.module';
 import { DisruptionsModule } from './disruptions/disruptions.module';
 import { HistoryModule } from './history/history.module';
+import { PushModule } from './push/push.module';
 import { GtfsStaticModule } from './gtfs-static/gtfs-static.module';
 import { AdminModule } from './admin/admin.module';
 import { HealthModule } from './health/health.module';
@@ -174,6 +175,7 @@ const MAX_QUERY_DEPTH = 8;
     TransportModule,
     RealtimeModule,
     HistoryModule,
+    PushModule,
     TripPlannerModule,
     StationsModule,
     DisruptionsModule,

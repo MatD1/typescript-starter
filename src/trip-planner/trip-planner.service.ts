@@ -384,12 +384,15 @@ export class TripPlannerService {
     loc: NswApiRecord | undefined,
   ): LocationObject | undefined {
     if (!loc) return undefined;
+    // EFA rapidJSON emits coord arrays LATITUDE-FIRST ([lat, lon]) even
+    // though request strings are lon:lat:EPSG:4326. Reading them lon-first
+    // put every stop ~7,000 km away.
     const coord = loc?.coord as number[] | undefined;
     return {
       id: loc?.id as string | undefined,
       name: loc?.name as string | undefined,
-      lat: coord?.[1],
-      lon: coord?.[0],
+      lat: coord?.[0],
+      lon: coord?.[1],
       type: loc?.type as string | undefined,
     } satisfies LocationObject;
   }
@@ -403,8 +406,8 @@ export class TripPlannerService {
         id: l?.id as string | undefined,
         name: l?.name as string | undefined,
         disassembledName: l?.disassembledName as string | undefined,
-        lat: coord?.[1],
-        lon: coord?.[0],
+        lat: coord?.[0],
+        lon: coord?.[1],
         type: l?.type as string | undefined,
         transportMode: modes?.join(','),
       } satisfies StopObject;
@@ -447,8 +450,8 @@ export class TripPlannerService {
         id: l?.id as string | undefined,
         name: l?.name as string | undefined,
         disassembledName: l?.disassembledName as string | undefined,
-        lat: coord?.[1],
-        lon: coord?.[0],
+        lat: coord?.[0],
+        lon: coord?.[1],
         type: l?.type as string | undefined,
       } satisfies StopObject;
     });
