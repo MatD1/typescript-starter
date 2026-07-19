@@ -1,5 +1,11 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import * as admin from 'firebase-admin';
+import {
+  cert,
+  getApps,
+  initializeApp,
+  type ServiceAccount,
+} from 'firebase-admin/app';
+import { getMessaging } from 'firebase-admin/messaging';
 
 /**
  * FCM topic push. Clients subscribe to `line-<CODE>` topics (T1, CCN…)
@@ -26,9 +32,9 @@ export class PushService implements OnModuleInit {
     try {
       const json = JSON.parse(
         Buffer.from(raw, 'base64').toString('utf8'),
-      ) as admin.ServiceAccount;
-      if (admin.apps.length === 0) {
-        admin.initializeApp({ credential: admin.credential.cert(json) });
+      ) as ServiceAccount;
+      if (getApps().length === 0) {
+        initializeApp({ credential: cert(json) });
       }
       this.enabled = true;
       this.logger.log('Firebase Admin initialised — push enabled');
@@ -56,7 +62,7 @@ export class PushService implements OnModuleInit {
       return;
     }
     try {
-      await admin.messaging().send({
+      await getMessaging().send({
         topic,
         notification: { title, body },
         data: { line, ...data },
