@@ -545,6 +545,15 @@ X-API-Key: nsw_xxx
 ```json
 [
   {
+    "tripId": "28.T.1-T1-Y-mjp-1.1.H",
+    "serviceRef": {
+      "realtimeTripId": "28.T.1-T1-Y-mjp-1.1.H",
+      "scheduledTripId": "1-T1-Y-mjp-1.1.H",
+      "routeId": "NSN",
+      "mode": "sydneytrains",
+      "startDate": "20260309",
+      "startTime": "08:10:00"
+    },
     "stopName": "Circular Quay Station",
     "stopId": "200060",
     "lineName": "T1",
@@ -556,6 +565,11 @@ X-API-Key: nsw_xxx
   }
 ]
 ```
+
+`serviceRef` mirrors the trip planner's per-leg service reference — pass its
+fields to `trackTrip`/`GET /api/v1/realtime/track-trip` alongside `tripId` so
+live tracking still finds the vehicle when the departure board hasn't been
+matched to a realtime trip ID yet (common for services about to depart).
 
 **Cache-Control**: `public, max-age=30`
 

@@ -11,6 +11,7 @@ describe('TripPlannerService.findStops validation', () => {
   const mockTransportService = {
     getStopFinder: jest.fn(),
     getTripPlan: jest.fn(),
+    getDepartureMonitor: jest.fn(),
   };
 
   const mockGtfsStaticService = {
@@ -239,6 +240,74 @@ describe('TripPlannerService.findStops validation', () => {
         realtimeTripId: 'REALTIME-1',
         scheduledTripId: 'SCHEDULED-1',
         mode: 'intercity',
+        startDate: '20260714',
+        startTime: '09:00:00',
+      }),
+    );
+  });
+
+  it('returns a server-derived service reference for departures', async () => {
+    mockTransportService.getDepartureMonitor.mockResolvedValue({
+      stopEvents: [
+        {
+          departureTimePlanned: '2026-07-14T09:00:00+10:00',
+          departureTimeEstimated: '2026-07-14T09:01:00+10:00',
+          location: { id: '200060', name: 'Central Station' },
+          transportation: {
+            id: 'SCHEDULED-1',
+            number: 'CCN',
+            product: { name: 'Train' },
+            properties: { RealtimeTripId: 'REALTIME-1' },
+          },
+        },
+      ],
+    });
+
+    const response = await service.getDepartures({
+      name_dm: '200060',
+      type_dm: 'stop',
+    });
+
+    expect(response).toHaveLength(1);
+    expect(response[0].tripId).toBe('REALTIME-1');
+    expect(response[0].serviceRef).toEqual(
+      expect.objectContaining({
+        realtimeTripId: 'REALTIME-1',
+        scheduledTripId: 'SCHEDULED-1',
+        mode: 'intercity',
+        startDate: '20260714',
+        startTime: '09:00:00',
+      }),
+    );
+  });
+
+  it('still derives a service reference when only the scheduled id is known', async () => {
+    mockTransportService.getDepartureMonitor.mockResolvedValue({
+      stopEvents: [
+        {
+          departureTimePlanned: '2026-07-14T09:00:00+10:00',
+          location: { id: '200060', name: 'Central Station' },
+          transportation: {
+            id: 'SCHEDULED-2',
+            number: 'T1',
+            product: { name: 'Train' },
+            properties: { RealtimeRouteId: 'NSN' },
+          },
+        },
+      ],
+    });
+
+    const response = await service.getDepartures({
+      name_dm: '200060',
+      type_dm: 'stop',
+    });
+
+    expect(response[0].tripId).toBe('SCHEDULED-2');
+    expect(response[0].serviceRef).toEqual(
+      expect.objectContaining({
+        scheduledTripId: 'SCHEDULED-2',
+        routeId: 'NSN',
+        mode: 'sydneytrains',
         startDate: '20260714',
         startTime: '09:00:00',
       }),

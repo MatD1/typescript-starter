@@ -420,21 +420,34 @@ export class TripPlannerService {
       const transport = e?.transportation as NswApiRecord | undefined;
       const location = e?.location as NswApiRecord | undefined;
       const properties = transport?.properties as NswApiRecord | undefined;
-      const tripId =
-        (properties?.RealtimeTripId as string | undefined) ??
-        (transport?.id as string | undefined);
+      const realtimeTripId = properties?.RealtimeTripId as string | undefined;
+      const scheduledTripId = transport?.id as string | undefined;
+      const tripId = realtimeTripId ?? scheduledTripId;
+      const transportation = (transport?.product as NswApiRecord | undefined)
+        ?.name as string | undefined;
+      const lineName = transport?.number as string | undefined;
+      const departureTimePlanned = e?.departureTimePlanned as
+        | string
+        | undefined;
 
       return {
         tripId,
+        serviceRef: this.mapServiceReference(
+          realtimeTripId,
+          scheduledTripId,
+          properties,
+          transportation,
+          lineName,
+          departureTimePlanned,
+        ),
         stopName: location?.name as string | undefined,
         stopId: location?.id as string | undefined,
-        lineName: transport?.number as string | undefined,
+        lineName,
         destination: (transport?.destination as NswApiRecord | undefined)
           ?.name as string | undefined,
-        departureTimePlanned: e?.departureTimePlanned as string | undefined,
+        departureTimePlanned,
         departureTimeEstimated: e?.departureTimeEstimated as string | undefined,
-        transportMode: (transport?.product as NswApiRecord | undefined)
-          ?.name as string | undefined,
+        transportMode: transportation,
         platform: (e?.platform as NswApiRecord | undefined)?.name as
           | string
           | undefined,

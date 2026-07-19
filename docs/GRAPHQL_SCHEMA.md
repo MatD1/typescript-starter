@@ -385,6 +385,15 @@ departures(stopId: String, stopName: String, itdDate: String, itdTime: String): 
 ```graphql
 query DepartureBoard {
   departures(stopId: "200060") {
+    tripId
+    serviceRef {
+      realtimeTripId
+      scheduledTripId
+      routeId
+      mode
+      startDate
+      startTime
+    }
     lineName
     destination
     departureTimePlanned
@@ -735,6 +744,8 @@ type StopObject {
 
 ```graphql
 type DepartureObject {
+  tripId: String # Realtime/scheduled trip id — lets clients open live tracking
+  serviceRef: ServiceReferenceObject
   stopName: String
   stopId: String
   lineName: String
@@ -743,8 +754,16 @@ type DepartureObject {
   departureTimeEstimated: String
   transportMode: String
   platform: String
+  lineCode: String # From GTFS (e.g. T1, CCN)
+  routeColour: String # Hex from GTFS (e.g. 009B77)
 }
 ```
+
+As with `LegObject`, pass `serviceRef`'s fields to `trackTrip` (in addition to
+`tripId`) so live tracking still finds the vehicle when the departure board
+hasn't been matched to a realtime trip ID yet — common for services that are
+about to depart but haven't published `RealtimeTripId` in the departure
+monitor feed.
 
 ---
 

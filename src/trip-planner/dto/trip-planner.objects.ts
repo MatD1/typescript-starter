@@ -210,6 +210,10 @@ export class DepartureObject {
   })
   tripId?: string;
 
+  @ApiPropertyOptional({ type: () => ServiceReferenceObject })
+  @Field(() => ServiceReferenceObject, { nullable: true })
+  serviceRef?: ServiceReferenceObject;
+
   @ApiPropertyOptional()
   @Field({ nullable: true })
   stopName?: string;
