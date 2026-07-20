@@ -419,7 +419,14 @@ export class TripPlannerService {
     return events.map((e) => {
       const transport = e?.transportation as NswApiRecord | undefined;
       const location = e?.location as NswApiRecord | undefined;
-      const properties = transport?.properties as NswApiRecord | undefined;
+      // EFA's departure monitor puts realtime identifiers (RealtimeTripId,
+      // RealtimeRouteId…) on the *stop event's* properties, not the
+      // transportation's — merge both so mid-route departures can be matched
+      // to the live GTFS-RT trip (a scheduled pattern id alone can't be).
+      const properties = {
+        ...(transport?.properties as NswApiRecord | undefined),
+        ...(e?.properties as NswApiRecord | undefined),
+      } as NswApiRecord;
       const realtimeTripId = properties?.RealtimeTripId as string | undefined;
       const scheduledTripId = transport?.id as string | undefined;
       const tripId = realtimeTripId ?? scheduledTripId;
