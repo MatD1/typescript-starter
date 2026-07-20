@@ -7,6 +7,7 @@ import type {
 import { GtfsStaticService } from '../gtfs-static/gtfs-static.service';
 import { CacheService } from '../cache/cache.service';
 import { CacheTTL } from '../cache/cache.constants';
+import { lineFor } from '../history/line-identity.util';
 import { TRANSPORT_MODES } from '../transport/transport.types';
 import type { TransportMode } from '../transport/transport.types';
 import type { TrackedTripObject } from './dto/tracked-trip.object';
@@ -286,9 +287,10 @@ export class RealtimeService {
       routeId?: string;
       startDate?: string;
       startTime?: string;
+      directionId?: number;
     } = {},
   ): Promise<TrackedTripObject | null> {
-    const cacheKey = `realtime:track:${mode ?? 'all'}:${tripId}:${reference.scheduledTripId ?? ''}:${reference.routeId ?? ''}:${reference.startDate ?? ''}:${reference.startTime ?? ''}`;
+    const cacheKey = `realtime:track:${mode ?? 'all'}:${tripId}:${reference.scheduledTripId ?? ''}:${reference.routeId ?? ''}:${reference.startDate ?? ''}:${reference.startTime ?? ''}:${reference.directionId ?? ''}`;
     const cached = await this.cache.get<TrackedTripObject | null>(cacheKey);
     if (cached !== undefined && cached !== null) return cached;
 
@@ -316,27 +318,14 @@ export class RealtimeService {
       const vehicleList = vehicles.status === 'fulfilled' ? vehicles.value : [];
       const updateList = updates.status === 'fulfilled' ? updates.value : [];
 
-      const candidateIds = new Set(
-        [tripId, reference.scheduledTripId].filter((id): id is string =>
-          Boolean(id),
-        ),
-      );
-      const matchesReference = (item: {
-        tripId?: string;
-        routeId?: string;
-        startDate?: string;
-        startTime?: string;
-      }) =>
-        (item.tripId != null && candidateIds.has(item.tripId)) ||
-        (reference.routeId != null &&
-          item.routeId === reference.routeId &&
-          (reference.startDate == null ||
-            item.startDate === reference.startDate) &&
-          (reference.startTime == null ||
-            item.startTime === reference.startTime));
-
-      const vehicle = vehicleList.find(matchesReference);
-      const tripUpdate = updateList.find(matchesReference);
+      const tripUpdate = this.findRealtimeMatch(updateList, tripId, reference);
+      // Prefer the vehicle carrying the matched update's tripId; otherwise
+      // run the same layered matcher over the position feed.
+      const vehicle =
+        (tripUpdate?.tripId != null
+          ? vehicleList.find((v) => v.tripId === tripUpdate.tripId)
+          : undefined) ??
+        this.findRealtimeMatch(vehicleList, tripId, reference);
 
       if (!vehicle && !tripUpdate) continue;
 
@@ -399,5 +388,164 @@ export class RealtimeService {
     // Redis / the NSW API for trips that haven't started yet.
     await this.cache.set(cacheKey, null, 10);
     return null;
+  }
+  /**
+   * Layered realtime matcher (EFA references ↔ GTFS-RT entities). Tiers:
+   *  1. exact trip id (realtime or scheduled reference id)
+   *  2. normalised id equality / prefix (formats differ between EFA and RT)
+   *  3. route family + start date + start time within ±3 min (+ direction)
+   *  4. schedule fingerprint: family/direction + first-stop *scheduled*
+   *     departure (RT time minus its delay) within ±2 min of the reference
+   * Tier 4 is what rescues departures that never got a RealtimeTripId.
+   */
+  private findRealtimeMatch<
+    T extends {
+      tripId?: string;
+      routeId?: string;
+      directionId?: number;
+      startDate?: string;
+      startTime?: string;
+      stopTimeUpdates?: Array<{
+        departureTime?: number;
+        departureDelay?: number;
+        arrivalTime?: number;
+        arrivalDelay?: number;
+      }>;
+    },
+  >(
+    items: T[],
+    tripId: string,
+    reference: {
+      scheduledTripId?: string;
+      routeId?: string;
+      startDate?: string;
+      startTime?: string;
+      directionId?: number;
+    },
+  ): T | undefined {
+    const exactIds = new Set(
+      [tripId, reference.scheduledTripId].filter((id): id is string =>
+        Boolean(id),
+      ),
+    );
+    const normalisedIds = [...exactIds]
+      .map((id) => RealtimeService.normaliseId(id))
+      .filter((id): id is string => Boolean(id));
+    const refFamily = reference.routeId
+      ? lineFor(reference.routeId, null)
+      : null;
+    const refStartEpochs = RealtimeService.sydneyEpochCandidates(
+      reference.startDate,
+      reference.startTime,
+    );
+
+    let best: T | undefined;
+    let bestTier = Number.MAX_SAFE_INTEGER;
+    for (const item of items) {
+      let tier: number | null = null;
+
+      if (item.tripId != null && exactIds.has(item.tripId)) {
+        tier = 1;
+      } else {
+        const itemNorm = RealtimeService.normaliseId(item.tripId);
+        if (
+          itemNorm != null &&
+          itemNorm.length >= 6 &&
+          normalisedIds.some(
+            (ref) =>
+              ref === itemNorm ||
+              ref.startsWith(itemNorm) ||
+              itemNorm.startsWith(ref),
+          )
+        ) {
+          tier = 2;
+        }
+      }
+
+      if (tier == null && refFamily != null) {
+        const familyMatches =
+          item.routeId != null && lineFor(item.routeId, null) === refFamily;
+        const directionOk =
+          reference.directionId == null ||
+          item.directionId == null ||
+          item.directionId === reference.directionId;
+
+        if (familyMatches && directionOk) {
+          if (
+            reference.startDate != null &&
+            item.startDate === reference.startDate &&
+            RealtimeService.timesWithin(
+              item.startTime,
+              reference.startTime,
+              180,
+            )
+          ) {
+            tier = 3;
+          } else if (refStartEpochs.length > 0) {
+            const first = item.stopTimeUpdates?.[0];
+            const scheduled =
+              first?.departureTime != null
+                ? first.departureTime - (first.departureDelay ?? 0)
+                : first?.arrivalTime != null
+                  ? first.arrivalTime - (first.arrivalDelay ?? 0)
+                  : null;
+            if (
+              scheduled != null &&
+              refStartEpochs.some((epoch) => Math.abs(scheduled - epoch) <= 120)
+            ) {
+              tier = 4;
+            }
+          }
+        }
+      }
+
+      if (tier != null && tier < bestTier) {
+        best = item;
+        bestTier = tier;
+        if (tier === 1) break;
+      }
+    }
+    return best;
+  }
+
+  private static normaliseId(id?: string): string | undefined {
+    if (!id) return undefined;
+    const normalised = id.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return normalised.length > 0 ? normalised : undefined;
+  }
+
+  /** Both "HH:MM[:SS]" strings within `toleranceSeconds` of each other. */
+  private static timesWithin(
+    a: string | undefined,
+    b: string | undefined,
+    toleranceSeconds: number,
+  ): boolean {
+    if (a == null || b == null) return a === b;
+    const parse = (value: string): number | null => {
+      const parts = value.split(':').map(Number);
+      if (parts.some(Number.isNaN) || parts.length < 2) return null;
+      return parts[0] * 3600 + parts[1] * 60 + (parts[2] ?? 0);
+    };
+    const secondsA = parse(a);
+    const secondsB = parse(b);
+    if (secondsA == null || secondsB == null) return false;
+    return Math.abs(secondsA - secondsB) <= toleranceSeconds;
+  }
+
+  /**
+   * Epoch-second candidates for a Sydney local start (yyyymmdd, HH:MM:SS).
+   * Sydney is +10 or +11 depending on DST; emitting both and matching either
+   * within tolerance avoids a timezone library dependency.
+   */
+  private static sydneyEpochCandidates(
+    startDate?: string,
+    startTime?: string,
+  ): number[] {
+    if (!startDate || !startTime || !/^\d{8}$/.test(startDate)) return [];
+    const iso = `${startDate.slice(0, 4)}-${startDate.slice(4, 6)}-${startDate.slice(6, 8)}T${startTime.length === 5 ? `${startTime}:00` : startTime}`;
+    return ['+10:00', '+11:00']
+      .map((offset) => Date.parse(`${iso}${offset}`))
+      .filter((ms) => !Number.isNaN(ms))
+      .map((ms) => Math.floor(ms / 1000));
   }
 }

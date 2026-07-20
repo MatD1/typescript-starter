@@ -1,4 +1,4 @@
-import { Args, Query, Resolver, Subscription } from '@nestjs/graphql';
+import { Args, Int, Query, Resolver, Subscription } from '@nestjs/graphql';
 import { Inject } from '@nestjs/common';
 import { RealtimeService } from './realtime.service';
 import { RealtimePollerService } from './realtime-poller.service';
@@ -69,10 +69,17 @@ export class RealtimeResolver {
     startDate?: string,
     @Args('startTime', { type: () => String, nullable: true })
     startTime?: string,
+    @Args('directionId', {
+      type: () => Int,
+      nullable: true,
+      description: 'GTFS direction (0/1) — disambiguates same-time services',
+    })
+    directionId?: number,
   ) {
     return this.realtimeService.trackTrip(tripId, mode, {
       scheduledTripId,
       routeId,
+      directionId,
       startDate,
       startTime,
     });
