@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { GtfsRealtimeService } from '../transport/gtfs-realtime.service';
 import type {
   VehiclePosition,
@@ -8,6 +8,8 @@ import { GtfsStaticService } from '../gtfs-static/gtfs-static.service';
 import { CacheService } from '../cache/cache.service';
 import { CacheTTL } from '../cache/cache.constants';
 import { lineFor } from '../history/line-identity.util';
+import { sydneyLocalDate } from '../history/sydney-date.util';
+import { gtfsScheduledEpochSeconds } from './gtfs-time.util';
 import { TRANSPORT_MODES } from '../transport/transport.types';
 import type { TransportMode } from '../transport/transport.types';
 import type { TrackedTripObject } from './dto/tracked-trip.object';
@@ -16,6 +18,17 @@ import {
   HeadwayStatus,
   VehicleHeadwayObject,
 } from './dto/headway.object';
+
+type LiveStopTimeUpdate = {
+  stopSequence?: number;
+  stopId?: string;
+  arrivalDelay?: number;
+  departureDelay?: number;
+  arrivalTime?: number;
+  departureTime?: number;
+  scheduleRelationship?: string;
+  departureOccupancyStatus?: string;
+};
 
 type WithMode<T> = T & { mode: string };
 type WithRouteMetadata<T> = T & { lineCode?: string; routeColour?: string };
@@ -32,6 +45,8 @@ const API_MODES: TransportMode[] = [
 
 @Injectable()
 export class RealtimeService {
+  private readonly logger = new Logger(RealtimeService.name);
+
   constructor(
     private readonly gtfsRt: GtfsRealtimeService,
     private readonly cache: CacheService,
@@ -332,9 +347,22 @@ export class RealtimeService {
       const routeId = vehicle?.routeId ?? tripUpdate?.routeId;
       const routeMap = await this.gtfsStaticService.getRouteMetadataMap();
       const meta = routeId ? routeMap.get(routeId) : undefined;
+      const resolvedTripId = vehicle?.tripId ?? tripUpdate?.tripId ?? tripId;
+
+      const liveStopTimeUpdates: LiveStopTimeUpdate[] | undefined =
+        tripUpdate?.stopTimeUpdates?.map((s) => ({
+          stopSequence: s.stopSequence,
+          stopId: s.stopId,
+          arrivalDelay: s.arrivalDelay,
+          departureDelay: s.departureDelay,
+          arrivalTime: s.arrivalTime,
+          departureTime: s.departureTime,
+          scheduleRelationship: s.scheduleRelationship,
+          departureOccupancyStatus: s.departureOccupancyStatus,
+        }));
 
       const result: TrackedTripObject = {
-        tripId: vehicle?.tripId ?? tripUpdate?.tripId ?? tripId,
+        tripId: resolvedTripId,
         routeId,
         lineCode: meta?.lineCode,
         routeColour: meta?.routeColour,
@@ -362,16 +390,13 @@ export class RealtimeService {
             }
           : undefined,
 
-        stopTimeUpdates: tripUpdate?.stopTimeUpdates?.map((s) => ({
-          stopSequence: s.stopSequence,
-          stopId: s.stopId,
-          arrivalDelay: s.arrivalDelay,
-          departureDelay: s.departureDelay,
-          arrivalTime: s.arrivalTime,
-          departureTime: s.departureTime,
-          scheduleRelationship: s.scheduleRelationship,
-          departureOccupancyStatus: s.departureOccupancyStatus,
-        })),
+        stopTimeUpdates: liveStopTimeUpdates?.length
+          ? await this.backfillPastStops(
+              resolvedTripId,
+              reference.startDate,
+              liveStopTimeUpdates,
+            )
+          : liveStopTimeUpdates,
 
         // Vehicle amenity info
         vehicleModel: vehicle?.vehicleModel,
@@ -389,6 +414,60 @@ export class RealtimeService {
     await this.cache.set(cacheKey, null, 10);
     return null;
   }
+
+  /**
+   * GTFS-RT producers (TfNSW included) drop `stop_time_update` entries once
+   * the vehicle has departed them — the feed only reports the stops still
+   * ahead. That makes a trip's past stops vanish from the client's timeline
+   * the moment the train passes them. Backfill those from the static
+   * schedule (matched by `stop_sequence`, which GTFS-RT guarantees lines up
+   * with the static trip) so the full stop-by-stop history stays visible;
+   * only entries missing from the live feed are synthesized.
+   */
+  private async backfillPastStops(
+    tripId: string,
+    startDate: string | undefined,
+    liveUpdates: LiveStopTimeUpdate[],
+  ): Promise<LiveStopTimeUpdate[]> {
+    try {
+      const { data: staticStopTimes } = await this.gtfsStaticService.getStopTimes(
+        tripId,
+        undefined,
+        1000,
+        0,
+      );
+      if (!staticStopTimes.length) return liveUpdates;
+
+      const anchorDate = startDate ?? sydneyLocalDate().replace(/-/g, '');
+      const liveBySequence = new Map(
+        liveUpdates
+          .filter((u) => u.stopSequence != null)
+          .map((u) => [u.stopSequence, u]),
+      );
+
+      return [...staticStopTimes]
+        .sort((a, b) => a.stopSequence - b.stopSequence)
+        .map((s) => {
+          const live = liveBySequence.get(s.stopSequence);
+          if (live) return live;
+          return {
+            stopSequence: s.stopSequence,
+            stopId: s.stopId,
+            arrivalTime: s.arrivalTime
+              ? gtfsScheduledEpochSeconds(anchorDate, s.arrivalTime)
+              : undefined,
+            departureTime: s.departureTime
+              ? gtfsScheduledEpochSeconds(anchorDate, s.departureTime)
+              : undefined,
+            scheduleRelationship: 'SCHEDULED',
+          } satisfies LiveStopTimeUpdate;
+        });
+    } catch (e) {
+      this.logger.warn(`Failed to backfill past stops for trip ${tripId}: ${e}`);
+      return liveUpdates;
+    }
+  }
+
   /**
    * Layered realtime matcher (EFA references ↔ GTFS-RT entities). Tiers:
    *  1. exact trip id (realtime or scheduled reference id)

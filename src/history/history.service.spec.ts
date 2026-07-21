@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DRIZZLE } from '../database/database.module';
 import { HistoryService } from './history.service';
+import { LineHealthAlertsService } from './line-health-alerts.service';
 
 describe('HistoryService', () => {
   let service: HistoryService;
@@ -14,6 +15,9 @@ describe('HistoryService', () => {
     select: jest.fn(() => selectChain),
     execute: jest.fn().mockResolvedValue({ rows: [] }),
   };
+  const mockLineHealthAlerts = {
+    activeByLine: jest.fn().mockResolvedValue(new Map()),
+  };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -21,11 +25,13 @@ describe('HistoryService', () => {
     selectChain.where.mockReturnThis();
     selectChain.orderBy.mockResolvedValue([]);
     selectChain.groupBy.mockResolvedValue([]);
+    mockLineHealthAlerts.activeByLine.mockResolvedValue(new Map());
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         HistoryService,
         { provide: DRIZZLE, useValue: mockDb },
+        { provide: LineHealthAlertsService, useValue: mockLineHealthAlerts },
       ],
     }).compile();
 

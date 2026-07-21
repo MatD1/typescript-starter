@@ -8,6 +8,7 @@ import { HistoryController } from './history.controller';
 import { HistoryResolver } from './history.resolver';
 import { HistorySamplerService } from './history-sampler.service';
 import { HistoryService } from './history.service';
+import { LineHealthAlertsService } from './line-health-alerts.service';
 
 @Module({
   imports: [RealtimeModule, DisruptionsModule, GtfsStaticModule, AuthModule],
@@ -17,7 +18,8 @@ import { HistoryService } from './history.service';
     HistoryService,
     HistoryBackfillService,
     HistoryResolver,
+    LineHealthAlertsService,
   ],
-  exports: [HistoryService, HistorySamplerService],
+  exports: [HistoryService, HistorySamplerService, LineHealthAlertsService],
 })
 export class HistoryModule {}

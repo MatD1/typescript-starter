@@ -124,3 +124,33 @@ export const disruptionEvents = pgTable(
     index('disruption_events_captured_at_idx').on(table.capturedAt),
   ],
 );
+
+/**
+ * A currently-active line health alert surfaced in the app (e.g. tapping a
+ * line's network-health stat). Written by the commute alert scan whenever it
+ * detects a degraded line, and re-evaluated every cycle: `resolvedAt` is set
+ * the moment that line's condition clears, and `expiresAt` is a hard backstop
+ * so an alert can never persist forever if the scan stops running.
+ */
+export const lineHealthAlerts = pgTable(
+  'line_health_alerts',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    line: text('line').notNull(),
+    severity: text('severity').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (table) => [
+    index('line_health_alerts_line_idx').on(table.line),
+    index('line_health_alerts_active_idx').on(table.line, table.resolvedAt),
+  ],
+);

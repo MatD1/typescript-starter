@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { HistoryService } from '../history/history.service';
+import { LineHealthAlertsService } from '../history/line-health-alerts.service';
 import { PushService } from './push.service';
 
 /** Rail lines eligible for commute alerts. */
@@ -35,6 +36,7 @@ export class CommuteAlertService {
   constructor(
     private readonly historyService: HistoryService,
     private readonly pushService: PushService,
+    private readonly lineHealthAlerts: LineHealthAlertsService,
   ) {}
 
   @Cron('2-59/5 * * * *') // offset from the sampler's */5 so data is fresh
@@ -47,7 +49,10 @@ export class CommuteAlertService {
         timeZone: 'Australia/Sydney',
       }).format(new Date()),
     );
-    if (sydneyHour >= QUIET_START_HOUR || sydneyHour < QUIET_END_HOUR) return;
+    // Push notifications are quiet-hours gated, but the line-health alert
+    // shown in the app should stay accurate around the clock.
+    const quietHours =
+      sydneyHour >= QUIET_START_HOUR || sydneyHour < QUIET_END_HOUR;
 
     let snapshots;
     try {
@@ -60,6 +65,8 @@ export class CommuteAlertService {
     }
 
     const now = Date.now();
+    const degradedLines = new Set<string>();
+
     for (const snap of snapshots) {
       if (!RAIL_LINES.has(snap.line)) continue;
       if (snap.trackedTrips < MIN_TRACKED_TRIPS) continue;
@@ -70,23 +77,33 @@ export class CommuteAlertService {
       const cancellations = snap.cancelledTrips >= 3;
       if (!widespreadDelays && !severeDisruption && !cancellations) continue;
 
-      const last = this.lastAlertAt.get(snap.line) ?? 0;
-      if (now - last < COOLDOWN_MS) continue;
-      this.lastAlertAt.set(snap.line, now);
+      degradedLines.add(snap.line);
 
       const avgMin = Math.round(snap.avgDelaySeconds / 60);
+      const title = `${snap.line} line delays`;
       const body = cancellations
         ? `${snap.cancelledTrips} services cancelled — check before you travel.`
         : `${Math.round(delayedShare * 100)}% of services are running late` +
           (avgMin >= 1 ? ` (avg ${avgMin} min).` : '.') +
           ' Allow extra time.';
+      const severity = cancellations
+        ? 'cancellations'
+        : severeDisruption
+          ? 'disruption'
+          : 'delays';
 
-      await this.pushService.sendToLine(
-        snap.line,
-        `${snap.line} line delays`,
-        body,
-        { type: 'commute_alert' },
-      );
+      await this.lineHealthAlerts.upsertActive(snap.line, severity, title, body);
+
+      if (quietHours) continue;
+      const last = this.lastAlertAt.get(snap.line) ?? 0;
+      if (now - last < COOLDOWN_MS) continue;
+      this.lastAlertAt.set(snap.line, now);
+
+      await this.pushService.sendToLine(snap.line, title, body, {
+        type: 'commute_alert',
+      });
     }
+
+    await this.lineHealthAlerts.resolveStale(RAIL_LINES, degradedLines);
   }
 }

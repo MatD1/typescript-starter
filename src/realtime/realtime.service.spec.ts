@@ -31,6 +31,9 @@ const mockGtfsStatic = {
     .mockResolvedValue(
       new Map<string, { lineCode: string; routeColour?: string }>(),
     ),
+  getStopTimes: jest
+    .fn()
+    .mockResolvedValue({ data: [], total: 0, limit: 1000, offset: 0, hasNextPage: false }),
 };
 
 /** Passthrough cache — always calls the factory and returns its value */
@@ -314,6 +317,56 @@ describe('RealtimeService', () => {
       expect(result!.stopTimeUpdates).toHaveLength(1);
       expect(result!.stopTimeUpdates![0].stopId).toBe('Central');
       expect(result!.stopTimeUpdates![0].arrivalDelay).toBe(90);
+    });
+
+    it('backfills stops the realtime feed has already dropped from the static schedule', async () => {
+      mockGtfsRt.getVehiclePositions.mockResolvedValue([vehicleForTrip]);
+      mockGtfsRt.getTripUpdates.mockResolvedValue([tripUpdateForTrip]);
+      mockGtfsStatic.getStopTimes.mockResolvedValueOnce({
+        data: [
+          { stopSequence: 1, stopId: 'Central', arrivalTime: '08:00:00', departureTime: '08:01:00' },
+          { stopSequence: 2, stopId: 'Redfern', arrivalTime: '08:05:00', departureTime: '08:05:30' },
+          { stopSequence: 3, stopId: 'Sydenham', arrivalTime: '08:10:00', departureTime: '08:10:30' },
+        ],
+        total: 3,
+        limit: 1000,
+        offset: 0,
+        hasNextPage: false,
+      });
+
+      const result = await service.trackTrip('TRIP-LIVE', 'sydneytrains', {
+        startDate: '20260101',
+      });
+
+      // The live feed only reported stop_sequence 1 (Central) — sequences 2
+      // and 3 must be backfilled from the static schedule, in order.
+      expect(result!.stopTimeUpdates).toHaveLength(3);
+      expect(result!.stopTimeUpdates!.map((s) => s.stopId)).toEqual([
+        'Central',
+        'Redfern',
+        'Sydenham',
+      ]);
+      // The live entry is passed through untouched (still carries its delay).
+      expect(result!.stopTimeUpdates![0].arrivalDelay).toBe(90);
+      // Backfilled entries are marked SCHEDULED with a real epoch time, no
+      // fabricated delay.
+      expect(result!.stopTimeUpdates![1].scheduleRelationship).toBe(
+        'SCHEDULED',
+      );
+      expect(result!.stopTimeUpdates![1].arrivalDelay).toBeUndefined();
+      expect(result!.stopTimeUpdates![1].departureTime).toEqual(
+        expect.any(Number),
+      );
+    });
+
+    it('falls back to the live-only list if the static schedule lookup fails', async () => {
+      mockGtfsRt.getVehiclePositions.mockResolvedValue([vehicleForTrip]);
+      mockGtfsRt.getTripUpdates.mockResolvedValue([tripUpdateForTrip]);
+      mockGtfsStatic.getStopTimes.mockRejectedValueOnce(new Error('db down'));
+
+      const result = await service.trackTrip('TRIP-LIVE', 'sydneytrains');
+      expect(result!.stopTimeUpdates).toHaveLength(1);
+      expect(result!.stopTimeUpdates![0].stopId).toBe('Central');
     });
 
     it('populates NSW vehicle amenity fields', async () => {

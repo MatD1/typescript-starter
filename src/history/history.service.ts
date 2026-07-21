@@ -6,6 +6,7 @@ import {
   networkSnapshots,
 } from '../database/schema/history.schema';
 import { sydneyDaysAgo, sydneyLocalDate } from './sydney-date.util';
+import { LineHealthAlertsService } from './line-health-alerts.service';
 
 export interface LinePerformanceDay {
   day: string;
@@ -55,7 +56,10 @@ export interface LinePerformanceComparison {
 
 @Injectable()
 export class HistoryService {
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDB,
+    private readonly lineHealthAlerts: LineHealthAlertsService,
+  ) {}
 
   /** Daily performance for one line (or the whole network), newest first. */
   async linePerformance(options: {
@@ -121,7 +125,7 @@ export class HistoryService {
       ORDER BY mode, line, captured_at DESC
     `);
 
-    return result.rows as Array<{
+    const rows = result.rows as Array<{
       capturedAt: Date;
       mode: string;
       line: string;
@@ -140,6 +144,12 @@ export class HistoryService {
       activeDisruptions: number;
       scheduledTrips: number;
     }>;
+
+    const alertsByLine = await this.lineHealthAlerts.activeByLine();
+    return rows.map((row) => ({
+      ...row,
+      activeAlert: alertsByLine.get(row.line) ?? null,
+    }));
   }
 
   /** Time-series of snapshots for charts (within retention window). */

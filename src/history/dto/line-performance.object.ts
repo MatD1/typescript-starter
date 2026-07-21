@@ -1,5 +1,23 @@
 import { Field, Float, Int, ObjectType } from '@nestjs/graphql';
 
+@ObjectType('LineHealthAlert', {
+  description:
+    'A currently-active degraded-service alert for a line (widespread delays, cancellations, or a severe disruption). Cleared automatically once the condition improves, so absence of this field means the line is currently healthy.',
+})
+export class LineHealthAlertObject {
+  @Field()
+  severity!: string;
+
+  @Field()
+  title!: string;
+
+  @Field()
+  body!: string;
+
+  @Field(() => String)
+  since!: any;
+}
+
 @ObjectType('DisruptionEffectCount')
 export class DisruptionEffectCountObject {
   @Field()
@@ -149,6 +167,9 @@ export class NetworkSnapshotObject {
 
   @Field(() => Int)
   scheduledTrips!: number;
+
+  @Field(() => LineHealthAlertObject, { nullable: true })
+  activeAlert!: LineHealthAlertObject | null;
 }
 
 @ObjectType('NetworkPerformanceSummary')
