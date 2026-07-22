@@ -73,9 +73,12 @@ export class ApiKeyGuard implements CanActivate {
       return true;
     }
 
-    const sessionInfo = await this.apiKeyService.getUserFromSession(credential);
+    const sessionInfo = await this.apiKeyService.resolveUserFromBearer(credential);
     if (!sessionInfo) {
       throw new UnauthorizedException('Invalid or expired session token');
+    }
+    if (sessionInfo.banned) {
+      throw new UnauthorizedException('This account has been suspended');
     }
     (req as unknown as Record<string, unknown>)['user'] = {
       userId: sessionInfo.userId,

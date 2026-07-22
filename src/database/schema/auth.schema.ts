@@ -18,6 +18,10 @@ export const user = pgTable('users', {
   banned: boolean('banned').notNull().default(false),
   banReason: text('ban_reason'),
   banExpires: timestamp('ban_expires'),
+  // Stable anchor to Supabase's JWT `sub` claim — used to resolve the local
+  // user record directly from a verified Supabase access token, instead of
+  // matching by email (fragile: emails can change or be reused).
+  supabaseUserId: text('supabase_user_id').unique(),
 });
 
 export const session = pgTable('session', {

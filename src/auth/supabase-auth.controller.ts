@@ -42,11 +42,16 @@ export class SupabaseAuthController {
   @Post('exchange')
   @Throttle({ default: { limit: 10, ttl: 900_000 } })
   @ApiOperation({
-    summary: 'Exchange a Supabase JWT for API session tokens',
+    summary: '[DEPRECATED] Exchange a Supabase JWT for API session tokens',
     description:
+      '**Deprecated** — the API now accepts a Supabase access token directly as the ' +
+      '`Authorization: Bearer` credential on every request; there is no need to exchange it ' +
+      'for a first-party session token first. This endpoint is kept only so already-installed ' +
+      'app versions keep working during rollout, and will be removed in a future release. ' +
+      'New clients should skip this call entirely.\n\n' +
       'Verifies the Supabase JWT, upserts the corresponding user record in the local database, ' +
-      'and returns a `sessionToken` + `refreshToken` pair that can be used with all authenticated API endpoints. ' +
-      '**Flow**: `Supabase sign-in → POST /auth/supabase/exchange → receive sessionToken → use Bearer token for API calls`',
+      'and returns a `sessionToken` + `refreshToken` pair that can be used with all authenticated API endpoints.',
+    deprecated: true,
   })
   @ApiBody({ type: SupabaseExchangeDto })
   @ApiOkResponse({

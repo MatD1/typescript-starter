@@ -11,11 +11,14 @@ import type { DrizzleDB } from '../database/database.module';
 import { apiKey, session, user } from '../database/schema/auth.schema';
 import { CacheService } from '../cache/cache.service';
 import { AuthService } from './auth.service';
+import { SupabaseAuthService } from './supabase-auth.service';
 
 /** Redis TTL for cached API key verification results (seconds). */
 const APIKEY_VERIFY_TTL = 60;
 /** Redis TTL for cached session → userId lookups (seconds). */
 const SESSION_TTL = 120;
+/** Redis TTL for cached Supabase-JWT → user resolutions (seconds). */
+const SUPABASE_TOKEN_TTL = 120;
 
 export interface ApiKeyRecord {
   id: string;
@@ -42,7 +45,38 @@ export class ApiKeyService {
     private readonly cache: CacheService,
     @Inject(forwardRef(() => AuthService))
     private readonly authService: AuthService,
+    private readonly supabaseAuthService: SupabaseAuthService,
   ) { }
+
+  /**
+   * Request-time auth resolution for a non-`nsw_` bearer credential. Tries
+   * it as a Supabase access token first (stateless, JWKS/HS256-verified —
+   * no DB round trip on a cache hit); falls back to the legacy first-party
+   * session-token lookup so already-installed app versions (and any
+   * Better-Auth-issued admin session) keep working during the rollout.
+   */
+  async resolveUserFromBearer(
+    credential: string,
+  ): Promise<{ userId: string; role: string; banned: boolean } | null> {
+    const cacheKey = `auth:bearer:${credential}`;
+    const cached = await this.cache.get<{
+      userId: string;
+      role: string;
+      banned: boolean;
+    } | null>(cacheKey);
+    if (cached !== null) return cached;
+
+    const viaSupabase =
+      await this.supabaseAuthService.authenticateBearerToken(credential);
+    if (viaSupabase) {
+      await this.cache.set(cacheKey, viaSupabase, SUPABASE_TOKEN_TTL);
+      return viaSupabase;
+    }
+
+    const viaSession = await this.getUserFromSession(credential);
+    if (!viaSession) return null;
+    return { ...viaSession, banned: false };
+  }
 
   async createApiKey(
     userId: string,

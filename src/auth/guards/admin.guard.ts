@@ -48,8 +48,8 @@ export class AdminGuard implements CanActivate {
       );
     }
 
-    const sessionInfo = await this.apiKeyService.getUserFromSession(token);
-    if (!sessionInfo || sessionInfo.role !== 'admin') {
+    const sessionInfo = await this.apiKeyService.resolveUserFromBearer(token);
+    if (!sessionInfo || sessionInfo.role !== 'admin' || sessionInfo.banned) {
       throw new ForbiddenException(
         sessionInfo
           ? 'Admin privileges required. Your account does not have the admin role.'

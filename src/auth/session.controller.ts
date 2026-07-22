@@ -43,12 +43,17 @@ export class SessionController {
   @Post('refresh')
   @Throttle({ default: { limit: 10, ttl: 900_000 } })
   @ApiOperation({
-    summary: 'Refresh session tokens',
+    summary: '[DEPRECATED] Refresh session tokens',
     description:
+      '**Deprecated** — only relevant to clients still using the first-party session-token ' +
+      'flow from `/auth/supabase/exchange`. New clients authenticate with a Supabase access ' +
+      'token directly and rely on the Supabase SDK for refresh; they never call this endpoint. ' +
+      'Kept only for already-installed app versions during rollout.\n\n' +
       'Exchanges a valid refresh token for new session and refresh tokens. ' +
       'Token rotation is applied — the old refresh token is immediately invalidated. ' +
       'Supply the token via `Authorization: Bearer <refresh-token>` **or** in the request body. ' +
       'Use the returned `sessionToken` for all authenticated API calls.',
+    deprecated: true,
   })
   @ApiBody({ type: RefreshDto, required: false })
   @ApiOkResponse({
