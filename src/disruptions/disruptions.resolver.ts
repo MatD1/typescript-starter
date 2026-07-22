@@ -1,4 +1,5 @@
 import { Args, Query, Resolver } from '@nestjs/graphql';
+import { Public } from '../common/decorators/public.decorator';
 import { DisruptionsService } from './disruptions.service';
 import { DisruptionObject } from './dto/disruption.object';
 import { TransportModeEnum } from '../transport/transport.types';
@@ -7,6 +8,7 @@ import { TransportModeEnum } from '../transport/transport.types';
 export class DisruptionsResolver {
   constructor(private readonly disruptionsService: DisruptionsService) {}
 
+  @Public()
   @Query(() => [DisruptionObject], {
     description: 'Get current service disruptions and alerts.',
   })
