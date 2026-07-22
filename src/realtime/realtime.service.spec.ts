@@ -95,6 +95,29 @@ describe('RealtimeService', () => {
       expect(modes.size).toBeGreaterThan(1);
     });
 
+    it('falls back to the last known-good snapshot when the feed suddenly comes back empty', async () => {
+      mockGtfsRt.getVehiclePositions.mockResolvedValue([]);
+      mockCacheService.get.mockImplementation((key: string) =>
+        Promise.resolve(
+          key.endsWith(':lastgood') ? [{ ...baseVehicle, mode: 'sydneytrains' }] : null,
+        ),
+      );
+
+      const results = await service.getVehiclePositions('sydneytrains');
+
+      expect(results).toHaveLength(1);
+      expect(results[0].vehicleId).toBe(baseVehicle.vehicleId);
+    });
+
+    it('does not fall back when the feed and the last-good snapshot are both empty', async () => {
+      mockGtfsRt.getVehiclePositions.mockResolvedValue([]);
+      mockCacheService.get.mockResolvedValue(null);
+
+      const results = await service.getVehiclePositions('sydneytrains');
+
+      expect(results).toHaveLength(0);
+    });
+
     it('skips modes that fail and returns the rest', async () => {
       mockGtfsRt.getVehiclePositions
         .mockResolvedValueOnce([baseVehicle]) // sydneytrains succeeds
@@ -357,6 +380,36 @@ describe('RealtimeService', () => {
       expect(result!.stopTimeUpdates![1].departureTime).toEqual(
         expect.any(Number),
       );
+    });
+
+    it('attaches static pickup_type/drop_off_type to every stop — live-matched and backfilled alike', async () => {
+      mockGtfsRt.getVehiclePositions.mockResolvedValue([vehicleForTrip]);
+      mockGtfsRt.getTripUpdates.mockResolvedValue([tripUpdateForTrip]);
+      mockGtfsStatic.getStopTimes.mockResolvedValueOnce({
+        data: [
+          // Matches the live update (stop_sequence 1) — a normal stop.
+          { stopSequence: 1, stopId: 'Central', arrivalTime: '08:00:00', departureTime: '08:01:00', pickupType: 0, dropOffType: 0 },
+          // Backfilled, and an express timing point the train doesn't stop at.
+          { stopSequence: 2, stopId: 'Strathfield', arrivalTime: '08:05:00', departureTime: '08:05:30', pickupType: 1, dropOffType: 1 },
+        ],
+        total: 2,
+        limit: 1000,
+        offset: 0,
+        hasNextPage: false,
+      });
+
+      const result = await service.trackTrip('TRIP-LIVE', 'sydneytrains', {
+        startDate: '20260101',
+      });
+
+      const [central, strathfield] = result!.stopTimeUpdates!;
+      expect(central.pickupType).toBe(0);
+      expect(central.dropOffType).toBe(0);
+      // The live entry's own fields (delay) survive the merge.
+      expect(central.arrivalDelay).toBe(90);
+
+      expect(strathfield.pickupType).toBe(1);
+      expect(strathfield.dropOffType).toBe(1);
     });
 
     it('falls back to the live-only list if the static schedule lookup fails', async () => {

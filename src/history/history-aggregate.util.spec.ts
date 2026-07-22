@@ -78,6 +78,66 @@ describe('aggregateHistorySample', () => {
     expect(entry.cancelledTrips).toBe(1);
     expect(entry.delayedTrips).toBe(0);
     expect(entry.maxDelay).toBe(0);
+    expect(result.newlyCancelledTripIds).toEqual(['t1']);
+  });
+
+  it('does not recount a cancelled trip already seen in an earlier sample today', () => {
+    const result = aggregateHistorySample({
+      tripUpdates: [
+        {
+          tripId: 't1',
+          routeId: 'CCN_1',
+          mode: 'sydneytrains',
+          scheduleRelationship: 'CANCELED',
+          stopTimeUpdates: [],
+        },
+        {
+          tripId: 't2',
+          routeId: 'CCN_1',
+          mode: 'sydneytrains',
+          scheduleRelationship: 'CANCELED',
+          stopTimeUpdates: [],
+        },
+      ],
+      vehicles: [],
+      alerts: [],
+      routeMetadata: emptyMeta,
+      stopToRouteIds: emptyStops,
+      tripToRouteId: emptyTrips,
+      scheduledByLine: emptyScheduled,
+      alreadyCountedCancelled: new Set(['t1']),
+    });
+
+    const entry = result.byLine.get('sydneytrains|CCN')!;
+    // t1 was already counted in an earlier 5-minute sample today (it's still
+    // sitting in the feed) — only t2 is a genuinely new cancellation.
+    expect(entry.cancelledTrips).toBe(1);
+    expect(result.newlyCancelledTripIds).toEqual(['t2']);
+  });
+
+  it('does not recount a skipped-stop trip already seen in an earlier sample today', () => {
+    const result = aggregateHistorySample({
+      tripUpdates: [
+        {
+          tripId: 's1',
+          routeId: 'NSN_1',
+          mode: 'sydneytrains',
+          delay: 0,
+          stopTimeUpdates: [{ scheduleRelationship: 'SKIPPED' }],
+        },
+      ],
+      vehicles: [],
+      alerts: [],
+      routeMetadata: emptyMeta,
+      stopToRouteIds: emptyStops,
+      tripToRouteId: emptyTrips,
+      scheduledByLine: emptyScheduled,
+      alreadyCountedSkipped: new Set(['s1']),
+    });
+
+    const entry = result.byLine.get('sydneytrains|T1')!;
+    expect(entry.skippedTrips).toBe(0);
+    expect(result.newlySkippedTripIds).toEqual([]);
   });
 
   it('resolves vehicle routeId via trip-update map', () => {

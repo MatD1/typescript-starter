@@ -98,6 +98,20 @@ export class LiveStopTimeUpdateObject {
   @ApiPropertyOptional()
   @Field({ nullable: true })
   departureOccupancyStatus?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'GTFS pickup_type from the static schedule — 1 means passengers cannot board here (an express/non-stopping timing point). 0 or null means a normal stop.',
+  })
+  @Field(() => Int, { nullable: true })
+  pickupType?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'GTFS drop_off_type from the static schedule — 1 means passengers cannot alight here. 0 or null means a normal stop.',
+  })
+  @Field(() => Int, { nullable: true })
+  dropOffType?: number;
 }
 
 /**

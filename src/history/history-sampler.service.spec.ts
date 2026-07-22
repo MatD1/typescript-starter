@@ -115,6 +115,52 @@ describe('HistorySamplerService', () => {
     expect(mockDb.transaction).toHaveBeenCalled();
   });
 
+  it('persists newly-cancelled tripIds to the daily dedup set, merged with what was already seen', async () => {
+    mockCache.get.mockImplementation((key: string) =>
+      Promise.resolve(key.startsWith('history:dedup:cancelled:') ? ['already-seen-1'] : null),
+    );
+    mockRealtime.getTripUpdates.mockResolvedValue([
+      {
+        tripId: 'newly-cancelled-1',
+        routeId: 'NSN_1',
+        mode: 'sydneytrains',
+        scheduleRelationship: 'CANCELED',
+        timestamp: Math.floor(Date.now() / 1000),
+        stopTimeUpdates: [],
+      },
+    ]);
+
+    await service.sample();
+
+    const dedupSetCall = mockCache.set.mock.calls.find(([key]: [string]) =>
+      key.startsWith('history:dedup:cancelled:'),
+    );
+    expect(dedupSetCall).toBeDefined();
+    expect(dedupSetCall![1]).toEqual(
+      expect.arrayContaining(['already-seen-1', 'newly-cancelled-1']),
+    );
+  });
+
+  it('does not touch the dedup set when there are no new cancellations', async () => {
+    mockRealtime.getTripUpdates.mockResolvedValue([
+      {
+        tripId: 't1',
+        routeId: 'NSN_1',
+        mode: 'sydneytrains',
+        delay: 0,
+        timestamp: Math.floor(Date.now() / 1000),
+        stopTimeUpdates: [],
+      },
+    ]);
+
+    await service.sample();
+
+    const dedupSetCall = mockCache.set.mock.calls.find(([key]: [string]) =>
+      key.startsWith('history:dedup:cancelled:'),
+    );
+    expect(dedupSetCall).toBeUndefined();
+  });
+
   it('skips persist when feed is stale', async () => {
     mockRealtime.getTripUpdates.mockResolvedValue([
       {

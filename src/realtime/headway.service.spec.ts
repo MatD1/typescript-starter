@@ -19,6 +19,8 @@ describe('RealtimeService (Headway)', () => {
 
     const mockCacheService = {
         getOrSet: jest.fn(async (_key, factory) => factory()),
+        get: jest.fn().mockResolvedValue(null),
+        set: jest.fn().mockResolvedValue(undefined),
     };
 
     beforeEach(async () => {

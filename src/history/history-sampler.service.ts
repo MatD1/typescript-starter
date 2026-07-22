@@ -24,6 +24,14 @@ import {
 } from './history.constants';
 import { sydneyLocalDate } from './sydney-date.util';
 
+/** Redis key prefix for the running set of tripIds already counted as
+ * cancelled/skipped today — see `aggregateHistorySample`'s dedup contract. */
+const DEDUP_CANCELLED_KEY_PREFIX = 'history:dedup:cancelled:';
+const DEDUP_SKIPPED_KEY_PREFIX = 'history:dedup:skipped:';
+/** A little over a day, so the set survives right up to the next Sydney
+ * calendar day before a fresh one starts. */
+const DEDUP_TTL_SECONDS = 26 * 60 * 60;
+
 export interface SamplerMetrics {
   lastSuccessAt: string | null;
   lastFailureAt: string | null;
@@ -100,6 +108,14 @@ export class HistorySamplerService {
         this.gtfsStaticService.getRouteIdsForTripIds(tripIdsForStatic),
       ]);
 
+      const day = sydneyLocalDate(at);
+      const [cancelledSeen, skippedSeen] = await Promise.all([
+        this.cache.get<string[]>(DEDUP_CANCELLED_KEY_PREFIX + day),
+        this.cache.get<string[]>(DEDUP_SKIPPED_KEY_PREFIX + day),
+      ]);
+      const alreadyCountedCancelled = new Set(cancelledSeen ?? []);
+      const alreadyCountedSkipped = new Set(skippedSeen ?? []);
+
       const aggregated = aggregateHistorySample({
         tripUpdates,
         vehicles,
@@ -109,6 +125,8 @@ export class HistorySamplerService {
         tripToRouteId,
         scheduledByLine,
         at,
+        alreadyCountedCancelled,
+        alreadyCountedSkipped,
       });
 
       if (aggregated.feedStale) {
@@ -139,9 +157,25 @@ export class HistorySamplerService {
 
       await this.persist(aggregated, at);
 
+      if (aggregated.newlyCancelledTripIds.length > 0) {
+        await this.cache.set(
+          DEDUP_CANCELLED_KEY_PREFIX + day,
+          [...alreadyCountedCancelled, ...aggregated.newlyCancelledTripIds],
+          DEDUP_TTL_SECONDS,
+        );
+      }
+      if (aggregated.newlySkippedTripIds.length > 0) {
+        await this.cache.set(
+          DEDUP_SKIPPED_KEY_PREFIX + day,
+          [...alreadyCountedSkipped, ...aggregated.newlySkippedTripIds],
+          DEDUP_TTL_SECONDS,
+        );
+      }
+
       const durationMs = Date.now() - started;
       this.logger.log(
-        `History sample stored for ${aggregated.byLine.size} lines in ${durationMs}ms (trips=${aggregated.tripUpdateCount}, vehicles=${aggregated.vehicleCount})`,
+        `History sample stored for ${aggregated.byLine.size} lines in ${durationMs}ms (trips=${aggregated.tripUpdateCount}, vehicles=${aggregated.vehicleCount}` +
+          `${aggregated.newlyCancelledTripIds.length ? `, newCancellations=${aggregated.newlyCancelledTripIds.join(',')}` : ''})`,
       );
       await this.recordMetrics({
         success: true,

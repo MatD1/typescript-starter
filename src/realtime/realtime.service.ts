@@ -28,6 +28,8 @@ type LiveStopTimeUpdate = {
   departureTime?: number;
   scheduleRelationship?: string;
   departureOccupancyStatus?: string;
+  pickupType?: number;
+  dropOffType?: number;
 };
 
 type WithMode<T> = T & { mode: string };
@@ -42,6 +44,16 @@ const API_MODES: TransportMode[] = [
   'metro',
   'lightrail',
 ];
+
+/**
+ * How long a "last known good" GTFS-RT snapshot stays eligible to cover a
+ * feed that suddenly comes back empty. Confirmed live against TfNSW: Sydney
+ * Metro's vehiclepos feed occasionally returns zero vehicles for a single
+ * poll even mid-service (a real upstream blip, not a bug in our matching) —
+ * long enough to ride that out, short enough that a genuine end-of-service
+ * gap still correctly reports no vehicles.
+ */
+const STICKY_FALLBACK_SECONDS = 60;
 
 @Injectable()
 export class RealtimeService {
@@ -151,6 +163,35 @@ export class RealtimeService {
     return r * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
+  /**
+   * Cached GTFS-RT fetch with a short "sticky last-good" fallback: if the
+   * feed comes back empty while we very recently had real data for it, keep
+   * serving that data for {@link STICKY_FALLBACK_SECONDS} instead of
+   * momentarily reporting every tracked service on that feed as vanished.
+   * A feed that's genuinely gone quiet (end of service, real outage) still
+   * correctly reports empty once the grace window elapses.
+   */
+  private async fetchWithStickyFallback<T>(
+    cacheKey: string,
+    ttlSeconds: number,
+    factory: () => Promise<T[]>,
+  ): Promise<T[]> {
+    const fresh = await this.cache.getOrSet(cacheKey, factory, ttlSeconds);
+    const lastGoodKey = `${cacheKey}:lastgood`;
+    if (fresh.length > 0) {
+      await this.cache.set(lastGoodKey, fresh, STICKY_FALLBACK_SECONDS);
+      return fresh;
+    }
+    const lastGood = await this.cache.get<T[]>(lastGoodKey);
+    if (lastGood && lastGood.length > 0) {
+      this.logger.warn(
+        `${cacheKey} came back empty — using the last known-good snapshot to ride out a transient feed gap`,
+      );
+      return lastGood;
+    }
+    return fresh;
+  }
+
   private classifyHeadway(seconds?: number): HeadwayStatus {
     if (seconds === undefined) return HeadwayStatus.UNKNOWN;
     if (seconds < 180) return HeadwayStatus.BUNCHED;
@@ -169,10 +210,10 @@ export class RealtimeService {
           return this.getIntercityVehiclePositions();
         }
         const cacheKey = `realtime:vehicles:${m}`;
-        const data = await this.cache.getOrSet(
+        const data = await this.fetchWithStickyFallback(
           cacheKey,
-          () => this.gtfsRt.getVehiclePositions(m),
           CacheTTL.VEHICLE_POSITIONS,
+          () => this.gtfsRt.getVehiclePositions(m),
         );
         return data.map((v): WithMode<VehiclePosition> => ({ ...v, mode: m }));
       }),
@@ -202,10 +243,10 @@ export class RealtimeService {
     WithMode<VehiclePosition>[]
   > {
     const [sydneytrainsData, intercityRouteIds] = await Promise.all([
-      this.cache.getOrSet(
+      this.fetchWithStickyFallback(
         'realtime:vehicles:sydneytrains',
-        () => this.gtfsRt.getVehiclePositions('sydneytrains'),
         CacheTTL.VEHICLE_POSITIONS,
+        () => this.gtfsRt.getVehiclePositions('sydneytrains'),
       ),
       this.gtfsStaticService.getIntercityRouteIds(),
     ]);
@@ -225,10 +266,10 @@ export class RealtimeService {
           return this.getIntercityTripUpdates();
         }
         const cacheKey = `realtime:tripupdates:${m}`;
-        const data = await this.cache.getOrSet(
+        const data = await this.fetchWithStickyFallback(
           cacheKey,
-          () => this.gtfsRt.getTripUpdates(m),
           CacheTTL.TRIP_UPDATES,
+          () => this.gtfsRt.getTripUpdates(m),
         );
         return data.map((t): WithMode<TripUpdate> => ({ ...t, mode: m }));
       }),
@@ -256,10 +297,10 @@ export class RealtimeService {
 
   private async fetchIntercityTripUpdates(): Promise<WithMode<TripUpdate>[]> {
     const [sydneytrainsData, intercityRouteIds] = await Promise.all([
-      this.cache.getOrSet(
+      this.fetchWithStickyFallback(
         'realtime:tripupdates:sydneytrains',
-        () => this.gtfsRt.getTripUpdates('sydneytrains'),
         CacheTTL.TRIP_UPDATES,
+        () => this.gtfsRt.getTripUpdates('sydneytrains'),
       ),
       this.gtfsStaticService.getIntercityRouteIds(),
     ]);
@@ -316,17 +357,17 @@ export class RealtimeService {
       const [vehicles, updates] = await Promise.allSettled([
         m === 'intercity'
           ? this.getIntercityVehiclePositions()
-          : this.cache.getOrSet(
+          : this.fetchWithStickyFallback(
               `realtime:vehicles:${m}`,
-              () => this.gtfsRt.getVehiclePositions(m),
               CacheTTL.VEHICLE_POSITIONS,
+              () => this.gtfsRt.getVehiclePositions(m),
             ),
         m === 'intercity'
           ? this.getIntercityTripUpdates()
-          : this.cache.getOrSet(
+          : this.fetchWithStickyFallback(
               `realtime:tripupdates:${m}`,
-              () => this.gtfsRt.getTripUpdates(m),
               CacheTTL.TRIP_UPDATES,
+              () => this.gtfsRt.getTripUpdates(m),
             ),
       ]);
 
@@ -391,7 +432,7 @@ export class RealtimeService {
           : undefined,
 
         stopTimeUpdates: liveStopTimeUpdates?.length
-          ? await this.backfillPastStops(
+          ? await this.enrichStopTimeUpdates(
               resolvedTripId,
               reference.startDate,
               liveStopTimeUpdates,
@@ -416,15 +457,22 @@ export class RealtimeService {
   }
 
   /**
-   * GTFS-RT producers (TfNSW included) drop `stop_time_update` entries once
-   * the vehicle has departed them — the feed only reports the stops still
-   * ahead. That makes a trip's past stops vanish from the client's timeline
-   * the moment the train passes them. Backfill those from the static
-   * schedule (matched by `stop_sequence`, which GTFS-RT guarantees lines up
-   * with the static trip) so the full stop-by-stop history stays visible;
-   * only entries missing from the live feed are synthesized.
+   * Merges the static schedule into a trip's live stop-time updates, two
+   * ways at once:
+   *
+   *  1. GTFS-RT producers (TfNSW included) drop `stop_time_update` entries
+   *     once the vehicle has departed them — the feed only reports the
+   *     stops still ahead. Backfill those from the static schedule (matched
+   *     by `stop_sequence`, which GTFS-RT guarantees lines up with the
+   *     static trip) so the full stop-by-stop history stays visible.
+   *  2. Neither GTFS-RT's per-stop `schedule_relationship` nor a plain live
+   *     feed distinguishes "the train calls here" from "the train passes
+   *     this timing point without stopping" (an express run) — that's a
+   *     static-schedule fact (`pickup_type`/`drop_off_type`). Attach it to
+   *     *every* stop, live or backfilled, so the client can grey out
+   *     non-stopping stations instead of implying the train stops there.
    */
-  private async backfillPastStops(
+  private async enrichStopTimeUpdates(
     tripId: string,
     startDate: string | undefined,
     liveUpdates: LiveStopTimeUpdate[],
@@ -439,6 +487,9 @@ export class RealtimeService {
       if (!staticStopTimes.length) return liveUpdates;
 
       const anchorDate = startDate ?? sydneyLocalDate().replace(/-/g, '');
+      const staticBySequence = new Map(
+        staticStopTimes.map((s) => [s.stopSequence, s]),
+      );
       const liveBySequence = new Map(
         liveUpdates
           .filter((u) => u.stopSequence != null)
@@ -447,9 +498,15 @@ export class RealtimeService {
 
       return [...staticStopTimes]
         .sort((a, b) => a.stopSequence - b.stopSequence)
-        .map((s) => {
+        .map((s): LiveStopTimeUpdate => {
           const live = liveBySequence.get(s.stopSequence);
-          if (live) return live;
+          if (live) {
+            return {
+              ...live,
+              pickupType: s.pickupType ?? undefined,
+              dropOffType: s.dropOffType ?? undefined,
+            };
+          }
           return {
             stopSequence: s.stopSequence,
             stopId: s.stopId,
@@ -460,10 +517,21 @@ export class RealtimeService {
               ? gtfsScheduledEpochSeconds(anchorDate, s.departureTime)
               : undefined,
             scheduleRelationship: 'SCHEDULED',
+            pickupType: s.pickupType ?? undefined,
+            dropOffType: s.dropOffType ?? undefined,
           } satisfies LiveStopTimeUpdate;
-        });
+        })
+        .concat(
+          // Live entries whose stopSequence isn't in the static schedule at
+          // all (added/rerouted trips) — keep them rather than dropping data.
+          liveUpdates.filter(
+            (u) => u.stopSequence == null || !staticBySequence.has(u.stopSequence),
+          ),
+        );
     } catch (e) {
-      this.logger.warn(`Failed to backfill past stops for trip ${tripId}: ${e}`);
+      this.logger.warn(
+        `Failed to enrich stop time updates for trip ${tripId}: ${e}`,
+      );
       return liveUpdates;
     }
   }

@@ -61,6 +61,17 @@ export interface AggregateSampleInput {
   /** mode|line → scheduled trip count for today */
   scheduledByLine: Map<string, number>;
   at?: Date;
+  /**
+   * tripIds already counted as cancelled/skipped earlier today. The sampler
+   * runs every 5 minutes and a cancelled trip typically stays in the feed
+   * for as long as it would have run — without this, the same distinct
+   * cancellation gets counted again on every sample it's present for,
+   * wildly inflating "N cancellations" for what's really one incident.
+   * Optional — omitting it (e.g. in older callers/tests) just disables
+   * dedup, matching the previous behaviour.
+   */
+  alreadyCountedCancelled?: ReadonlySet<string>;
+  alreadyCountedSkipped?: ReadonlySet<string>;
 }
 
 export interface AggregateSampleResult {
@@ -70,6 +81,11 @@ export interface AggregateSampleResult {
   tripUpdateCount: number;
   vehicleCount: number;
   isPeak: boolean;
+  /** tripIds newly counted as cancelled/skipped this sample — the caller
+   * persists these (merged with the running day's set) so the next sample
+   * knows not to recount them. */
+  newlyCancelledTripIds: string[];
+  newlySkippedTripIds: string[];
 }
 
 function emptyAccumulator(mode: string): LineAccumulator {
@@ -155,6 +171,11 @@ export function aggregateHistorySample(
   const feedStale =
     anyTs && atUnix - newestTs > STALE_FEED_THRESHOLD_SECONDS;
 
+  const alreadyCountedCancelled = input.alreadyCountedCancelled ?? new Set();
+  const alreadyCountedSkipped = input.alreadyCountedSkipped ?? new Set();
+  const newlyCancelledTripIds: string[] = [];
+  const newlySkippedTripIds: string[] = [];
+
   for (const tu of input.tripUpdates) {
     const entry = acc(tu.mode, lineForRoute(tu.routeId, tu.tripId));
     entry.trackedTrips++;
@@ -162,10 +183,16 @@ export function aggregateHistorySample(
     else entry.offPeakTrackedTrips++;
 
     if (tu.scheduleRelationship === 'CANCELED') {
-      entry.cancelledTrips++;
+      if (!alreadyCountedCancelled.has(tu.tripId)) {
+        entry.cancelledTrips++;
+        newlyCancelledTripIds.push(tu.tripId);
+      }
       continue;
     }
-    if (hasSkippedStop(tu)) entry.skippedTrips++;
+    if (hasSkippedStop(tu) && !alreadyCountedSkipped.has(tu.tripId)) {
+      entry.skippedTrips++;
+      newlySkippedTripIds.push(tu.tripId);
+    }
 
     const delay = tripDelay(tu);
     entry.delays.push(delay);
@@ -260,6 +287,8 @@ export function aggregateHistorySample(
     tripUpdateCount: input.tripUpdates.length,
     vehicleCount: input.vehicles.length,
     isPeak: peak,
+    newlyCancelledTripIds,
+    newlySkippedTripIds,
   };
 }
 
