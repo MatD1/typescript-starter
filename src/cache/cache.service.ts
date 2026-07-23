@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
+import type { AuditEventInput } from '../audit/audit.types';
 
 @Injectable()
 export class CacheService implements OnModuleDestroy {
@@ -38,11 +39,21 @@ export class CacheService implements OnModuleDestroy {
   }
 
   /**
-   * Flush ALL keys from the current Redis database.
-   * Use with caution — intended for admin cache-clear operations only.
+   * Flush application cache keys while preserving the durable audit retry
+   * stream. Audit delivery must not be erasable through the admin cache API.
    */
   async flush(): Promise<void> {
-    await this.client.flushdb();
+    let cursor = '0';
+    do {
+      const [nextCursor, keys] = await this.client.scan(
+        cursor,
+        'COUNT',
+        500,
+      );
+      const deletable = keys.filter((key) => !key.startsWith('audit:'));
+      if (deletable.length) await this.client.del(...deletable);
+      cursor = nextCursor;
+    } while (cursor !== '0');
   }
 
   /**
@@ -79,6 +90,52 @@ export class CacheService implements OnModuleDestroy {
 
   async releaseLock(key: string): Promise<void> {
     await this.client.del(key);
+  }
+
+  async enqueueAuditEvent(event: AuditEventInput): Promise<string> {
+    return this.client.xadd(
+      'audit:pending',
+      'MAXLEN',
+      '~',
+      '100000',
+      '*',
+      'event',
+      JSON.stringify(event),
+    ) as Promise<string>;
+  }
+
+  async readAuditEvents(
+    limit = 100,
+  ): Promise<Array<{ streamId: string; event: AuditEventInput }>> {
+    const entries = await this.client.xrange(
+      'audit:pending',
+      '-',
+      '+',
+      'COUNT',
+      limit,
+    );
+    return entries.flatMap(([streamId, fields]) => {
+      const eventIndex = fields.indexOf('event');
+      if (eventIndex < 0 || !fields[eventIndex + 1]) return [];
+      try {
+        return [
+          {
+            streamId,
+            event: JSON.parse(fields[eventIndex + 1]) as AuditEventInput,
+          },
+        ];
+      } catch {
+        return [];
+      }
+    });
+  }
+
+  async ackAuditEvent(streamId: string): Promise<void> {
+    await this.client.xdel('audit:pending', streamId);
+  }
+
+  async auditQueueLength(): Promise<number> {
+    return this.client.xlen('audit:pending');
   }
 
   onModuleDestroy() {

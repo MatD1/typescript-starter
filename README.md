@@ -15,6 +15,7 @@ A fully-functional **GraphQL + REST** wrapper for the [NSW Open Data Transport](
 | **GTFS Static** | Timetable data (routes, stops, trips, calendars) ingested nightly at 3 AM |
 | **Caching** | Valkey/Redis-backed with per-resource TTLs (15 s to 24 h) |
 | **Docs** | Swagger UI at `/api/docs` · GraphQL Playground at `/graphql` |
+| **Audit** | Append-only admin/security trail with admin REST + GraphQL queries and immutable daily archives |
 
 ## Transport Modes
 
@@ -213,6 +214,13 @@ query {
 | `SESSION_TTL_SECONDS` | Session token lifetime (default: 3600 = 1 hour) |
 | `REFRESH_TOKEN_TTL_SECONDS` | Refresh token lifetime (default: 604800 = 7 days) |
 | `ALLOWED_ORIGINS` | Comma-separated CORS origins |
+| `AUDIT_IP_HASH_SECRET` | Dedicated key used to fingerprint client IPs without storing raw addresses |
+| `AUDIT_SIGNING_SECRET` | Dedicated key used to sign chained archive manifests |
+| `AUDIT_S3_*` | Dedicated Object-Lock-capable audit archive bucket and least-privilege credentials |
+| `AUDIT_ARCHIVE_DISABLED` | Local-development escape hatch; must be false/unset in production |
+
+See [Audit Log Operations](docs/AUDIT_LOGS.md) for admin APIs, retention,
+immutable storage requirements, monitoring, and archive recovery.
 
 ---
 

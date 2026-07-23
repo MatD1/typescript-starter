@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { sql } from 'drizzle-orm';
 import { CacheService } from '../cache/cache.service';
@@ -23,6 +23,8 @@ import {
   SNAPSHOT_RETENTION_DAYS,
 } from './history.constants';
 import { sydneyLocalDate } from './sydney-date.util';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS } from '../audit/audit.types';
 
 /** Redis key prefix for the running set of tripIds already counted as
  * cancelled/skipped today — see `aggregateHistorySample`'s dedup contract. */
@@ -62,6 +64,7 @@ export class HistorySamplerService {
     private readonly disruptionsService: DisruptionsService,
     private readonly gtfsStaticService: GtfsStaticService,
     private readonly cache: CacheService,
+    @Optional() private readonly audit?: AuditService,
   ) {}
 
   @Cron('*/5 * * * *')
@@ -183,6 +186,21 @@ export class HistorySamplerService {
         lineCount: aggregated.byLine.size,
         tripUpdateCount: aggregated.tripUpdateCount,
       });
+      await this.audit?.recordBestEffort({
+        category: 'history',
+        action: AUDIT_ACTIONS.HISTORY_SAMPLE_COMPLETED,
+        outcome: 'succeeded',
+        source: 'job',
+        actor: { type: 'system', id: 'history-sampler' },
+        targetType: 'history_sample',
+        targetId: at.toISOString(),
+        metadata: {
+          durationMs,
+          lineCount: aggregated.byLine.size,
+          tripUpdateCount: aggregated.tripUpdateCount,
+          vehicleCount: aggregated.vehicleCount,
+        },
+      });
     } catch (error) {
       this.logger.error(
         `History sampling failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -193,6 +211,19 @@ export class HistorySamplerService {
         lineCount: null,
         tripUpdateCount: null,
         reason: 'error',
+      });
+      await this.audit?.recordBestEffort({
+        category: 'history',
+        action: AUDIT_ACTIONS.HISTORY_SAMPLE_FAILED,
+        outcome: 'failed',
+        severity: 'warning',
+        source: 'job',
+        actor: { type: 'system', id: 'history-sampler' },
+        targetType: 'history_sample',
+        error: {
+          code: 'HISTORY_SAMPLE_FAILED',
+          message: error instanceof Error ? error.message : String(error),
+        },
       });
     }
   }

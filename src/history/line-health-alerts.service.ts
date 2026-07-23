@@ -1,7 +1,9 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { and, eq, gt, inArray, isNull, lte, notInArray } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../database/database.module';
 import { lineHealthAlerts } from '../database/schema/history.schema';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS } from '../audit/audit.types';
 
 export type LineAlertSeverity = 'delays' | 'cancellations' | 'disruption';
 
@@ -26,7 +28,10 @@ const ALERT_TTL_MS = 3 * 60 * 60 * 1000;
 export class LineHealthAlertsService {
   private readonly logger = new Logger(LineHealthAlertsService.name);
 
-  constructor(@Inject(DRIZZLE) private readonly db: DrizzleDB) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: DrizzleDB,
+    @Optional() private readonly audit?: AuditService,
+  ) {}
 
   /** Open (or refresh) the active alert for a line. */
   async upsertActive(
@@ -39,7 +44,10 @@ export class LineHealthAlertsService {
     const expiresAt = new Date(now.getTime() + ALERT_TTL_MS);
 
     const existing = await this.db
-      .select({ id: lineHealthAlerts.id })
+      .select({
+        id: lineHealthAlerts.id,
+        severity: lineHealthAlerts.severity,
+      })
       .from(lineHealthAlerts)
       .where(
         and(eq(lineHealthAlerts.line, line), isNull(lineHealthAlerts.resolvedAt)),
@@ -51,6 +59,17 @@ export class LineHealthAlertsService {
         .update(lineHealthAlerts)
         .set({ severity, title, body, updatedAt: now, expiresAt })
         .where(eq(lineHealthAlerts.id, existing[0].id));
+      await this.audit?.recordBestEffort({
+        category: 'history',
+        action: AUDIT_ACTIONS.LINE_ALERT_UPDATED,
+        outcome: 'succeeded',
+        source: 'job',
+        actor: { type: 'system', id: 'line-health-alerts' },
+        targetType: 'line_alert',
+        targetId: String(existing[0].id),
+        before: { severity: existing[0].severity },
+        after: { severity, line },
+      });
       return;
     }
 
@@ -62,6 +81,16 @@ export class LineHealthAlertsService {
       createdAt: now,
       updatedAt: now,
       expiresAt,
+    });
+    await this.audit?.recordBestEffort({
+      category: 'history',
+      action: AUDIT_ACTIONS.LINE_ALERT_CREATED,
+      outcome: 'succeeded',
+      source: 'job',
+      actor: { type: 'system', id: 'line-health-alerts' },
+      targetType: 'line',
+      targetId: line,
+      after: { severity, line },
     });
   }
 
@@ -113,6 +142,27 @@ export class LineHealthAlertsService {
     } catch (e) {
       this.logger.warn(`Failed to resolve stale line alerts: ${e}`);
     }
+  }
+
+  /** Admin override: clear a line's open alert immediately, without waiting for the next scan cycle to see the condition has cleared. */
+  async resolveManually(line: string): Promise<boolean> {
+    const result = await this.db
+      .update(lineHealthAlerts)
+      .set({ resolvedAt: new Date() })
+      .where(and(eq(lineHealthAlerts.line, line), isNull(lineHealthAlerts.resolvedAt)))
+      .returning({ id: lineHealthAlerts.id });
+    const resolved = result.length > 0;
+    if (resolved) {
+      await this.audit?.recordBestEffort({
+        category: 'history',
+        action: AUDIT_ACTIONS.LINE_ALERT_RESOLVED,
+        outcome: 'succeeded',
+        targetType: 'line',
+        targetId: line,
+        metadata: { resolution: 'manual' },
+      });
+    }
+    return resolved;
   }
 
   /** Every currently-active (unresolved, unexpired) alert, keyed by line. */

@@ -14,6 +14,7 @@ describe('HistoryService', () => {
   const mockDb = {
     select: jest.fn(() => selectChain),
     execute: jest.fn().mockResolvedValue({ rows: [] }),
+    transaction: jest.fn(),
   };
   const mockLineHealthAlerts = {
     activeByLine: jest.fn().mockResolvedValue(new Map()),
@@ -128,5 +129,55 @@ describe('HistoryService', () => {
     };
     const text = JSON.stringify(sqlObj);
     expect(text).toContain('DISTINCT ON');
+  });
+
+  describe('purgeHistory', () => {
+    function mockTx(counts: { snapshots: number; daily: number; disruptions: number }) {
+      const deleteChain = (n: number) => ({
+        where: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue(Array.from({ length: n }, (_, i) => ({ id: i }))),
+        }),
+      });
+      let call = 0;
+      const order = [counts.snapshots, counts.daily, counts.disruptions];
+      return {
+        delete: jest.fn(() => deleteChain(order[call++])),
+      };
+    }
+
+    it('refuses an unscoped, unconfirmed purge', async () => {
+      await expect(service.purgeHistory({})).rejects.toThrow(
+        'Provide a from/to date range, or set confirmFullWipe=true to purge all history.',
+      );
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+    });
+
+    it('purges a date-scoped range and returns per-table counts', async () => {
+      mockDb.transaction.mockImplementation(async (fn: (tx: unknown) => unknown) =>
+        fn(mockTx({ snapshots: 3, daily: 2, disruptions: 1 })),
+      );
+
+      const result = await service.purgeHistory({ from: '2026-07-01', to: '2026-07-05' });
+
+      expect(result).toEqual({
+        networkSnapshotsDeleted: 3,
+        linePerformanceDailyDeleted: 2,
+        disruptionEventsDeleted: 1,
+      });
+    });
+
+    it('allows a full wipe when explicitly confirmed', async () => {
+      mockDb.transaction.mockImplementation(async (fn: (tx: unknown) => unknown) =>
+        fn(mockTx({ snapshots: 0, daily: 0, disruptions: 0 })),
+      );
+
+      await expect(
+        service.purgeHistory({ confirmFullWipe: true }),
+      ).resolves.toEqual({
+        networkSnapshotsDeleted: 0,
+        linePerformanceDailyDeleted: 0,
+        disruptionEventsDeleted: 0,
+      });
+    });
   });
 });

@@ -29,6 +29,15 @@ import { ApiKeyService } from '../auth/api-key.service';
 import { AuthService } from '../auth/auth.service';
 import { GtfsStaticService } from '../gtfs-static/gtfs-static.service';
 import { HistorySamplerService } from '../history/history-sampler.service';
+import {
+  LineHealthAlertsService,
+  type ActiveLineAlert,
+  type LineAlertSeverity,
+} from '../history/line-health-alerts.service';
+import { PushService } from '../push/push.service';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS, type AuditAction } from '../audit/audit.types';
+import { AuditObjectStorage } from '../audit/audit.storage';
 import type {
   AdminUsersQueryDto,
   UpdateUserDto,
@@ -72,6 +81,10 @@ export class AdminService {
     private readonly gtfsStaticService: GtfsStaticService,
     private readonly historySamplerService: HistorySamplerService,
     private readonly httpService: HttpService,
+    private readonly pushService: PushService,
+    private readonly lineHealthAlertsService: LineHealthAlertsService,
+    private readonly audit: AuditService,
+    private readonly auditStorage: AuditObjectStorage,
   ) { }
 
   // ─── Auth ──────────────────────────────────────────────────────────────────
@@ -151,74 +164,245 @@ export class AdminService {
     };
   }
 
-  async updateUser(id: string, dto: UpdateUserDto, headers: Headers): Promise<AdminUser> {
-    // BetterAuth admin API handles role management and banning specifically
-    if (dto.role !== undefined) {
-      await this.authService.auth.api.setRole({
-        body: {
-          userId: id,
-          role: dto.role,
-        },
-        headers,
+  async updateUser(
+    id: string,
+    dto: UpdateUserDto,
+    headers: Headers,
+    reason: string,
+  ): Promise<AdminUser> {
+    const before = await this.getUser(id);
+    const attempts: Array<{ action: AuditAction; id: string }> = [];
+    if (dto.role !== undefined && dto.role !== before.role) {
+      const event = await this.audit.recordAttempt({
+        category: 'administration',
+        action: AUDIT_ACTIONS.ADMIN_USER_ROLE_CHANGED,
+        severity: 'high',
+        targetType: 'user',
+        targetId: id,
+        reason,
+        before: { role: before.role },
+        after: { role: dto.role },
       });
+      attempts.push({ action: AUDIT_ACTIONS.ADMIN_USER_ROLE_CHANGED, id: event.id });
+    }
+    if (dto.banned !== undefined && dto.banned !== before.banned) {
+      const event = await this.audit.recordAttempt({
+        category: 'administration',
+        action: AUDIT_ACTIONS.ADMIN_USER_BAN_CHANGED,
+        severity: 'high',
+        targetType: 'user',
+        targetId: id,
+        reason,
+        before: {
+          banned: before.banned,
+          banReason: before.banReason,
+          banExpires: before.banExpires,
+        },
+        after: {
+          banned: dto.banned,
+          banReason: dto.banReason,
+          banExpiresIn: dto.banExpiresIn,
+        },
+      });
+      attempts.push({ action: AUDIT_ACTIONS.ADMIN_USER_BAN_CHANGED, id: event.id });
     }
 
-    if (dto.banned === true) {
-      await this.authService.auth.api.banUser({
-        body: {
-          userId: id,
-          reason: dto.banReason,
-          expiresIn: dto.banExpiresIn,
-        },
-        headers,
-      });
-    } else if (dto.banned === false) {
-      await this.authService.auth.api.unbanUser({
-        body: {
-          userId: id,
-        },
-        headers,
-      });
+    try {
+      if (dto.role !== undefined) {
+        await this.authService.auth.api.setRole({
+          body: { userId: id, role: dto.role },
+          headers,
+        });
+      }
+      if (dto.banned === true) {
+        await this.authService.auth.api.banUser({
+          body: {
+            userId: id,
+            reason: dto.banReason,
+            expiresIn: dto.banExpiresIn,
+          },
+          headers,
+        });
+      } else if (dto.banned === false) {
+        await this.authService.auth.api.unbanUser({
+          body: { userId: id },
+          headers,
+        });
+      }
+      const updatedUser = await this.getUser(id);
+      for (const attempt of attempts) {
+        await this.audit.record({
+          category: 'administration',
+          action: attempt.action,
+          outcome: 'succeeded',
+          severity: 'high',
+          targetType: 'user',
+          targetId: id,
+          reason,
+          correlationId: attempt.id,
+          before: {
+            role: before.role,
+            banned: before.banned,
+            banReason: before.banReason,
+          },
+          after: {
+            role: updatedUser.role,
+            banned: updatedUser.banned,
+            banReason: updatedUser.banReason,
+          },
+        });
+      }
+      return updatedUser;
+    } catch (error) {
+      await this.recordFailedAttempts(attempts, 'user', id, reason, error);
+      throw error;
     }
-
-    const updatedUser = await this.getUser(id);
-    return updatedUser;
   }
 
-  async deleteUser(id: string, headers: Headers): Promise<void> {
-    await this.authService.auth.api.removeUser({
-      body: {
-        userId: id,
-      },
-      headers,
+  async deleteUser(id: string, headers: Headers, reason: string): Promise<void> {
+    const before = await this.getUser(id);
+    const attempt = await this.audit.recordAttempt({
+      category: 'administration',
+      action: AUDIT_ACTIONS.ADMIN_USER_DELETED,
+      severity: 'critical',
+      targetType: 'user',
+      targetId: id,
+      reason,
+      before: { role: before.role, banned: before.banned },
     });
+    try {
+      await this.authService.auth.api.removeUser({
+        body: { userId: id },
+        headers,
+      });
+      await this.audit.record({
+        category: 'administration',
+        action: AUDIT_ACTIONS.ADMIN_USER_DELETED,
+        outcome: 'succeeded',
+        severity: 'critical',
+        targetType: 'user',
+        targetId: id,
+        reason,
+        correlationId: attempt.id,
+        before: { role: before.role, banned: before.banned },
+      });
+    } catch (error) {
+      await this.recordFailedAttempts(
+        [{ action: AUDIT_ACTIONS.ADMIN_USER_DELETED, id: attempt.id }],
+        'user',
+        id,
+        reason,
+        error,
+      );
+      throw error;
+    }
   }
 
   // ─── Impersonation ─────────────────────────────────────────────────────────
 
-  async impersonateUser(adminUserId: string, targetUserId: string, headers: Headers) {
+  async impersonateUser(
+    adminUserId: string,
+    targetUserId: string,
+    headers: Headers,
+    reason: string,
+  ) {
     this.logger.log(`Admin ${adminUserId} starting impersonation of ${targetUserId}`);
-    return this.authService.auth.api.impersonateUser({
-      body: {
-        userId: targetUserId,
-      },
-      headers,
+    const attempt = await this.audit.recordAttempt({
+      category: 'administration',
+      action: AUDIT_ACTIONS.ADMIN_IMPERSONATION_STARTED,
+      severity: 'critical',
+      actor: { type: 'user', id: adminUserId, role: 'admin' },
+      targetType: 'user',
+      targetId: targetUserId,
+      reason,
     });
+    try {
+      const result = await this.authService.auth.api.impersonateUser({
+        body: { userId: targetUserId },
+        headers,
+      });
+      await this.audit.record({
+        category: 'administration',
+        action: AUDIT_ACTIONS.ADMIN_IMPERSONATION_STARTED,
+        outcome: 'succeeded',
+        severity: 'critical',
+        actor: { type: 'user', id: adminUserId, role: 'admin' },
+        targetType: 'user',
+        targetId: targetUserId,
+        reason,
+        correlationId: attempt.id,
+      });
+      return result;
+    } catch (error) {
+      await this.recordFailedAttempts(
+        [{ action: AUDIT_ACTIONS.ADMIN_IMPERSONATION_STARTED, id: attempt.id }],
+        'user',
+        targetUserId,
+        reason,
+        error,
+      );
+      throw error;
+    }
   }
 
   async stopImpersonating(headers: Headers) {
-    return this.authService.auth.api.stopImpersonating({ headers });
+    const result = await this.authService.auth.api.stopImpersonating({ headers });
+    await this.audit.record({
+      category: 'administration',
+      action: AUDIT_ACTIONS.ADMIN_IMPERSONATION_STOPPED,
+      outcome: 'succeeded',
+      severity: 'high',
+      targetType: 'session',
+    });
+    return result;
   }
 
   // ─── API Keys ──────────────────────────────────────────────────────────────
 
-  async createApiKey(adminUserId: string, dto: AdminCreateApiKeyDto) {
-    return this.apiKeyService.createApiKey(
+  async createApiKey(
+    adminUserId: string,
+    dto: AdminCreateApiKeyDto,
+    reason?: string,
+  ) {
+    const elevated =
+      dto.permissionLevel === 'admin' ||
+      dto.permissionLevel === 'app-authorised';
+    const action = elevated
+      ? AUDIT_ACTIONS.API_KEY_ELEVATED_PERMISSION_CHANGED
+      : AUDIT_ACTIONS.API_KEY_CREATED;
+    const attempt = elevated
+      ? await this.audit.recordAttempt({
+          category: 'api_key',
+          action,
+          severity: 'high',
+          targetType: 'api_key',
+          reason,
+          after: { permissions: dto.permissionLevel, name: dto.name },
+        })
+      : undefined;
+    const created = await this.apiKeyService.createApiKey(
       adminUserId,
       dto.name,
       dto.permissionLevel,
       dto.expiresAt ? new Date(dto.expiresAt) : undefined,
     );
+    await this.audit.record({
+      category: 'api_key',
+      action,
+      outcome: 'succeeded',
+      severity: elevated ? 'high' : 'info',
+      targetType: 'api_key',
+      targetId: created.id,
+      reason,
+      correlationId: attempt?.id,
+      after: {
+        id: created.id,
+        name: dto.name,
+        permissions: dto.permissionLevel,
+        start: created.start,
+      },
+    });
+    return created;
   }
 
 
@@ -288,13 +472,34 @@ export class AdminService {
     };
   }
 
-  async updateApiKey(id: string, dto: UpdateApiKeyDto): Promise<AdminApiKey> {
+  async updateApiKey(
+    id: string,
+    dto: UpdateApiKeyDto,
+    reason?: string,
+  ): Promise<AdminApiKey> {
     const rows = await this.db
       .select()
       .from(apiKey)
       .where(eq(apiKey.id, id))
       .limit(1);
     if (!rows.length) throw new NotFoundException(`API key ${id} not found`);
+    const requiresReason =
+      dto.permissions !== undefined || dto.enabled !== undefined;
+    const action = requiresReason
+      ? AUDIT_ACTIONS.API_KEY_ELEVATED_PERMISSION_CHANGED
+      : AUDIT_ACTIONS.API_KEY_UPDATED;
+    const attempt = requiresReason
+      ? await this.audit.recordAttempt({
+          category: 'api_key',
+          action,
+          severity: 'high',
+          targetType: 'api_key',
+          targetId: id,
+          reason,
+          before: this.apiKeyAuditSnapshot(rows[0]),
+          after: { ...this.apiKeyAuditSnapshot(rows[0]), ...dto },
+        })
+      : undefined;
 
     const updates: Partial<typeof apiKey.$inferInsert> = {
       updatedAt: new Date(),
@@ -305,15 +510,29 @@ export class AdminService {
     if (dto.rateLimitTimeWindow !== undefined) updates.rateLimitTimeWindow = dto.rateLimitTimeWindow;
     if (dto.permissions !== undefined) updates.permissions = dto.permissions;
 
-    const updated = await this.db
-      .update(apiKey)
-      .set(updates)
-      .where(eq(apiKey.id, id))
-      .returning();
+    const updated = await this.db.transaction(async (tx) => {
+      const changed = await tx
+        .update(apiKey)
+        .set(updates)
+        .where(eq(apiKey.id, id))
+        .returning();
+      await this.audit.recordInTransaction(tx, {
+        category: 'api_key',
+        action,
+        outcome: 'succeeded',
+        severity: requiresReason ? 'high' : 'info',
+        targetType: 'api_key',
+        targetId: id,
+        reason,
+        correlationId: attempt?.id,
+        before: this.apiKeyAuditSnapshot(rows[0]),
+        after: this.apiKeyAuditSnapshot(changed[0]),
+      });
+      return changed;
+    });
 
     // Invalidate the cache to enforce new settings immediately
     await this.cache.del(`apiKey:verify:${rows[0].key}`);
-
     return this.mapApiKey(updated[0]);
   }
 
@@ -324,7 +543,18 @@ export class AdminService {
       .where(eq(apiKey.id, id))
       .limit(1);
     if (!rows.length) throw new NotFoundException(`API key ${id} not found`);
-    await this.db.delete(apiKey).where(eq(apiKey.id, id));
+    await this.db.transaction(async (tx) => {
+      await tx.delete(apiKey).where(eq(apiKey.id, id));
+      await this.audit.recordInTransaction(tx, {
+        category: 'api_key',
+        action: AUDIT_ACTIONS.API_KEY_REVOKED,
+        outcome: 'succeeded',
+        severity: 'high',
+        targetType: 'api_key',
+        targetId: id,
+        before: this.apiKeyAuditSnapshot(rows[0]),
+      });
+    });
   }
 
   async resetApiKeyUsage(id: string): Promise<AdminApiKey> {
@@ -335,11 +565,29 @@ export class AdminService {
       .limit(1);
     if (!rows.length) throw new NotFoundException(`API key ${id} not found`);
 
-    const updated = await this.db
-      .update(apiKey)
-      .set({ requestCount: 0, remaining: null, updatedAt: new Date() })
-      .where(eq(apiKey.id, id))
-      .returning();
+    const updated = await this.db.transaction(async (tx) => {
+      const changed = await tx
+        .update(apiKey)
+        .set({ requestCount: 0, remaining: null, updatedAt: new Date() })
+        .where(eq(apiKey.id, id))
+        .returning();
+      await this.audit.recordInTransaction(tx, {
+        category: 'api_key',
+        action: AUDIT_ACTIONS.API_KEY_USAGE_RESET,
+        outcome: 'succeeded',
+        targetType: 'api_key',
+        targetId: id,
+        before: {
+          requestCount: rows[0].requestCount,
+          remaining: rows[0].remaining,
+        },
+        after: {
+          requestCount: changed[0].requestCount,
+          remaining: changed[0].remaining,
+        },
+      });
+      return changed;
+    });
 
     return this.mapApiKey(updated[0]);
   }
@@ -636,9 +884,19 @@ export class AdminService {
   async triggerGtfsIngest(
     force = true,
     feedOrMode?: string,
+    reason?: string,
   ): Promise<GtfsIngestResult> {
+    const target = feedOrMode?.trim() || undefined;
+    const attempt = await this.audit.recordAttempt({
+      category: 'gtfs',
+      action: AUDIT_ACTIONS.GTFS_INGEST_ATTEMPTED,
+      severity: 'high',
+      targetType: 'gtfs_feed',
+      targetId: target ?? 'all',
+      reason,
+      metadata: { force },
+    });
     try {
-      const target = feedOrMode?.trim() || undefined;
       this.logger.log(
         `Admin GTFS ingest started (force=${force}, target=${target ?? 'all'}, static key + S3)`,
       );
@@ -651,14 +909,40 @@ export class AdminService {
       const ok = results.filter((r) => r.success);
       const failed = results.filter((r) => !r.success);
       const modesIngested = [...new Set(ok.map((r) => r.mode))];
-      return {
+      const result = {
         success: failed.length === 0 && ok.length > 0,
         modesIngested,
         feedsIngested: ok.map((r) => r.feedKey),
         failedFeeds: failed.map((r) => r.feedKey),
       };
+      await this.audit.record({
+        category: 'gtfs',
+        action: AUDIT_ACTIONS.GTFS_INGEST_COMPLETED,
+        outcome: result.success ? 'succeeded' : 'failed',
+        severity: result.success ? 'info' : 'high',
+        targetType: 'gtfs_feed',
+        targetId: target ?? 'all',
+        reason,
+        correlationId: attempt.id,
+        metadata: result,
+      });
+      return result;
     } catch (err) {
       this.logger.error(`GTFS ingest failed: ${String(err)}`);
+      await this.audit.record({
+        category: 'gtfs',
+        action: AUDIT_ACTIONS.GTFS_INGEST_FAILED,
+        outcome: 'failed',
+        severity: 'high',
+        targetType: 'gtfs_feed',
+        targetId: target ?? 'all',
+        reason,
+        correlationId: attempt.id,
+        error: {
+          code: 'GTFS_INGEST_FAILED',
+          message: err instanceof Error ? err.message : String(err),
+        },
+      });
       return {
         success: false,
         modesIngested: [],
@@ -670,8 +954,146 @@ export class AdminService {
 
   // ─── Cache ─────────────────────────────────────────────────────────────────
 
-  async flushCache(): Promise<void> {
-    await this.cache.flush();
+  async flushCache(reason: string): Promise<void> {
+    const attempt = await this.audit.recordAttempt({
+      category: 'system',
+      action: AUDIT_ACTIONS.CACHE_FLUSH_ATTEMPTED,
+      severity: 'high',
+      targetType: 'cache',
+      targetId: 'redis',
+      reason,
+    });
+    try {
+      await this.cache.flush();
+      await this.audit.record({
+        category: 'system',
+        action: AUDIT_ACTIONS.CACHE_FLUSH_COMPLETED,
+        outcome: 'succeeded',
+        severity: 'high',
+        targetType: 'cache',
+        targetId: 'redis',
+        reason,
+        correlationId: attempt.id,
+      });
+    } catch (error) {
+      await this.audit.record({
+        category: 'system',
+        action: AUDIT_ACTIONS.CACHE_FLUSH_FAILED,
+        outcome: 'failed',
+        severity: 'high',
+        targetType: 'cache',
+        targetId: 'redis',
+        reason,
+        correlationId: attempt.id,
+        error: {
+          code: 'CACHE_FLUSH_FAILED',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+      throw error;
+    }
+  }
+
+  // ─── Notifications ─────────────────────────────────────────────────────────
+
+  /** Sends a push to every device the calling admin has registered — a quick way to confirm push delivery end-to-end. */
+  async sendTestNotification(
+    adminUserId: string,
+    title: string,
+    body: string,
+    reason: string,
+  ): Promise<{ sent: number; pruned: number }> {
+    const attempt = await this.audit.recordAttempt({
+      category: 'notification',
+      action: AUDIT_ACTIONS.ADMIN_NOTIFICATION_TEST,
+      severity: 'high',
+      targetType: 'user',
+      targetId: adminUserId,
+      reason,
+      metadata: { titleLength: title.length, bodyLength: body.length },
+    });
+    const result = await this.pushService.sendToUser(adminUserId, title, body, {
+      type: 'admin_test',
+    });
+    await this.audit.record({
+      category: 'notification',
+      action: AUDIT_ACTIONS.ADMIN_NOTIFICATION_TEST,
+      outcome: 'succeeded',
+      severity: 'high',
+      targetType: 'user',
+      targetId: adminUserId,
+      reason,
+      correlationId: attempt.id,
+      metadata: result,
+    });
+    return result;
+  }
+
+  /**
+   * Publishes an on-demand service-issue alert to a line's topic and opens
+   * (or refreshes) that line's active health alert, so it shows up on the
+   * app's network-health card exactly like an automatically-detected one.
+   */
+  async sendServiceAlert(
+    line: string,
+    title: string,
+    body: string,
+    severity: LineAlertSeverity,
+    reason: string,
+  ): Promise<void> {
+    const attempt = await this.audit.recordAttempt({
+      category: 'notification',
+      action: AUDIT_ACTIONS.ADMIN_SERVICE_ALERT,
+      severity: 'high',
+      targetType: 'line',
+      targetId: line,
+      reason,
+      metadata: { severity, titleLength: title.length, bodyLength: body.length },
+    });
+    await this.lineHealthAlertsService.upsertActive(line, severity, title, body);
+    await this.pushService.sendToLine(line, title, body, {
+      type: 'admin_service_alert',
+    });
+    await this.audit.record({
+      category: 'notification',
+      action: AUDIT_ACTIONS.ADMIN_SERVICE_ALERT,
+      outcome: 'succeeded',
+      severity: 'high',
+      targetType: 'line',
+      targetId: line,
+      reason,
+      correlationId: attempt.id,
+      metadata: { severity },
+    });
+  }
+
+  async getActiveLineAlerts(): Promise<ActiveLineAlert[]> {
+    const map = await this.lineHealthAlertsService.activeByLine();
+    return [...map.values()];
+  }
+
+  async resolveLineAlert(line: string, reason: string): Promise<boolean> {
+    const attempt = await this.audit.recordAttempt({
+      category: 'notification',
+      action: AUDIT_ACTIONS.ADMIN_LINE_ALERT_RESOLVED,
+      severity: 'high',
+      targetType: 'line',
+      targetId: line,
+      reason,
+    });
+    const resolved = await this.lineHealthAlertsService.resolveManually(line);
+    await this.audit.record({
+      category: 'notification',
+      action: AUDIT_ACTIONS.ADMIN_LINE_ALERT_RESOLVED,
+      outcome: 'succeeded',
+      severity: 'high',
+      targetType: 'line',
+      targetId: line,
+      reason,
+      correlationId: attempt.id,
+      metadata: { resolved },
+    });
+    return resolved;
   }
 
   // ─── Health ────────────────────────────────────────────────────────────────
@@ -682,6 +1104,7 @@ export class AdminService {
       this.checkRedis(),
       this.checkTfNsw(),
       this.checkHistorySampler(),
+      this.checkAudit(),
     ]);
 
     const memoryUsage = process.memoryUsage();
@@ -818,6 +1241,76 @@ export class AdminService {
         latencyMs: Date.now() - start,
       };
     }
+  }
+
+  private async checkAudit(): Promise<{
+    name: string;
+    status: string;
+    latencyMs: number;
+  }> {
+    const start = Date.now();
+    try {
+      const [queueLength, storageReady] = await Promise.all([
+        this.cache.auditQueueLength(),
+        this.auditStorage.readiness(),
+      ]);
+      const archiveDisabled = process.env.AUDIT_ARCHIVE_DISABLED === 'true';
+      const status =
+        queueLength > 1000
+          ? `error: retry backlog ${queueLength}`
+          : archiveDisabled || storageReady
+            ? `ok: retry backlog ${queueLength}${
+                archiveDisabled ? ', archive disabled' : ', archive ready'
+              }`
+            : 'error: immutable archive storage unavailable';
+      return { name: 'audit', status, latencyMs: Date.now() - start };
+    } catch (error) {
+      return {
+        name: 'audit',
+        status: `error: ${String(error)}`,
+        latencyMs: Date.now() - start,
+      };
+    }
+  }
+
+  private async recordFailedAttempts(
+    attempts: Array<{ action: AuditAction; id: string }>,
+    targetType: string,
+    targetId: string,
+    reason: string | undefined,
+    error: unknown,
+  ): Promise<void> {
+    for (const attempt of attempts) {
+      await this.audit.record({
+        category: 'administration',
+        action: attempt.action,
+        outcome: 'failed',
+        severity: 'high',
+        targetType,
+        targetId,
+        reason,
+        correlationId: attempt.id,
+        error: {
+          code: 'ADMIN_OPERATION_FAILED',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  private apiKeyAuditSnapshot(row: typeof apiKey.$inferSelect) {
+    return {
+      id: row.id,
+      name: row.name,
+      start: row.start,
+      enabled: row.enabled,
+      permissions: row.permissions,
+      rateLimitEnabled: row.rateLimitEnabled,
+      rateLimitMax: row.rateLimitMax,
+      rateLimitTimeWindow: row.rateLimitTimeWindow,
+      expiresAt: row.expiresAt,
+      userId: row.referenceId,
+    };
   }
 
   // ─── Mappers ───────────────────────────────────────────────────────────────

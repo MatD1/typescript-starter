@@ -6,6 +6,8 @@ import * as authSchema from './schema/auth.schema';
 import * as gtfsSchema from './schema/gtfs.schema';
 import * as requestLogSchema from './schema/request-log.schema';
 import * as historySchema from './schema/history.schema';
+import * as pushSchema from './schema/push.schema';
+import * as auditSchema from './schema/audit.schema';
 
 export const DRIZZLE = Symbol('DRIZZLE');
 
@@ -14,6 +16,8 @@ const schema = {
   ...gtfsSchema,
   ...requestLogSchema,
   ...historySchema,
+  ...pushSchema,
+  ...auditSchema,
 };
 
 export type AppSchema = typeof schema;

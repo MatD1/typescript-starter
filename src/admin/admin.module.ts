@@ -5,6 +5,7 @@ import { CacheModule } from '../cache/cache.module';
 import { AuthModule } from '../auth/auth.module';
 import { GtfsStaticModule } from '../gtfs-static/gtfs-static.module';
 import { HistoryModule } from '../history/history.module';
+import { PushModule } from '../push/push.module';
 import { AdminService } from './admin.service';
 import { AdminController } from './admin.controller';
 import { AdminResolver } from './admin.resolver';
@@ -17,6 +18,7 @@ import { AdminGuard } from '../auth/guards/admin.guard';
     AuthModule,
     GtfsStaticModule,
     HistoryModule,
+    PushModule,
     HttpModule,
   ],
   controllers: [AdminController],

@@ -32,6 +32,26 @@ export default () => ({
       process.env.S3_SECRET_ACCESS_KEY ?? process.env.AWS_SECRET_ACCESS_KEY,
   },
 
+  audit: {
+    ipHashSecret: process.env.AUDIT_IP_HASH_SECRET,
+    signingSecret: process.env.AUDIT_SIGNING_SECRET,
+    archive: {
+      disabled: process.env.AUDIT_ARCHIVE_DISABLED === 'true',
+      endpoint:
+        process.env.AUDIT_S3_ENDPOINT ??
+        process.env.S3_ENDPOINT ??
+        process.env.AWS_ENDPOINT_URL,
+      region:
+        process.env.AUDIT_S3_REGION ??
+        process.env.S3_REGION ??
+        process.env.AWS_REGION ??
+        'auto',
+      bucket: process.env.AUDIT_S3_BUCKET,
+      accessKeyId: process.env.AUDIT_S3_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AUDIT_S3_SECRET_ACCESS_KEY,
+    },
+  },
+
   supabase: {
     url: process.env.SUPABASE_URL,
     jwtSecret: process.env.SUPABASE_JWT_SECRET,

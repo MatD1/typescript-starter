@@ -30,17 +30,36 @@ export class HealthController {
       rawKey !== 'null' &&
       !rawKey.toLowerCase().includes('replace_me'),
     );
+    const auditArchiveDisabled =
+      this.config.get<boolean>('audit.archive.disabled') ?? false;
+    const production = this.config.get<string>('nodeEnv') === 'production';
+    const auditArchiveConfigured =
+      (!production && auditArchiveDisabled) ||
+      Boolean(
+        this.config.get<string>('audit.archive.endpoint') &&
+          this.config.get<string>('audit.archive.bucket') &&
+          this.config.get<string>('audit.archive.accessKeyId') &&
+          this.config.get<string>('audit.archive.secretAccessKey') &&
+          this.config.get<string>('audit.ipHashSecret') &&
+          this.config.get<string>('audit.signingSecret'),
+      );
 
-    if (!configured) {
+    if (!configured || !auditArchiveConfigured) {
       throw new ServiceUnavailableException({
         status: 'not_ready',
-        checks: { tfnswApiKeyConfigured: false },
+        checks: {
+          tfnswApiKeyConfigured: configured,
+          auditArchiveConfigured,
+        },
       });
     }
 
     return {
       status: 'ready',
-      checks: { tfnswApiKeyConfigured: true },
+      checks: {
+        tfnswApiKeyConfigured: true,
+        auditArchiveConfigured: true,
+      },
     };
   }
 }

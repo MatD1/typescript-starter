@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers as RequestHeader,
   HttpCode,
   HttpStatus,
   Param,
@@ -47,6 +48,8 @@ import {
   AdminErrorLogsQueryDto,
   AdminStatsUsageQueryDto,
   AdminStatsTopQueryDto,
+  AdminTestNotificationDto,
+  AdminServiceAlertDto,
 } from './dto/admin.dto';
 import {
   AdminUserSwagger,
@@ -161,8 +164,13 @@ export class AdminController {
   @ApiBody({ type: UpdateUserDto })
   @ApiOkResponse({ type: AdminUserSwagger, description: 'Updated user record' })
   @ApiNotFoundResponse({ description: 'No user found for the given ID' })
-  updateUser(@Req() req: Request, @Param('id') id: string, @Body() dto: UpdateUserDto) {
-    return this.adminService.updateUser(id, dto, this.buildWebHeaders(req));
+  updateUser(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Body() dto: UpdateUserDto,
+    @RequestHeader('x-audit-reason') reason: string,
+  ) {
+    return this.adminService.updateUser(id, dto, this.buildWebHeaders(req), reason);
   }
 
   @Post('users/:id/impersonate')
@@ -173,9 +181,18 @@ export class AdminController {
   @ApiParam({ name: 'id', description: 'Target user ID to impersonate' })
   @ApiCreatedResponse({ description: 'New impersonation session created' })
   @ApiNotFoundResponse({ description: 'Target user not found' })
-  impersonate(@Param('id') id: string, @Req() req: Request) {
+  impersonate(
+    @Param('id') id: string,
+    @Req() req: Request,
+    @RequestHeader('x-audit-reason') reason: string,
+  ) {
     const adminUser = (req as any).user;
-    return this.adminService.impersonateUser(adminUser?.userId ?? 'unknown', id, this.buildWebHeaders(req));
+    return this.adminService.impersonateUser(
+      adminUser?.userId ?? 'unknown',
+      id,
+      this.buildWebHeaders(req),
+      reason,
+    );
   }
 
   @Post('users/stop-impersonating')
@@ -201,8 +218,12 @@ export class AdminController {
   @ApiNoContentResponse({ description: 'User successfully deleted' })
   @ApiNotFoundResponse({ description: 'No user found for the given ID' })
   @ApiTooManyRequestsResponse({ description: 'Rate limit exceeded (5 per minute)' })
-  async deleteUser(@Req() req: Request, @Param('id') id: string) {
-    await this.adminService.deleteUser(id, this.buildWebHeaders(req));
+  async deleteUser(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @RequestHeader('x-audit-reason') reason: string,
+  ) {
+    await this.adminService.deleteUser(id, this.buildWebHeaders(req), reason);
   }
 
   // ─── API Keys ─────────────────────────────────────────────────────────────
@@ -214,9 +235,13 @@ export class AdminController {
   })
   @ApiBody({ type: AdminCreateApiKeyDto })
   @ApiCreatedResponse({ description: 'Newly created API key' })
-  async createApiKey(@Req() req: Request, @Body() dto: AdminCreateApiKeyDto) {
+  async createApiKey(
+    @Req() req: Request,
+    @Body() dto: AdminCreateApiKeyDto,
+    @RequestHeader('x-audit-reason') reason?: string,
+  ) {
     const user = (req as any).user;
-    return this.adminService.createApiKey(user?.userId ?? '', dto);
+    return this.adminService.createApiKey(user?.userId ?? '', dto, reason);
   }
 
   @Get('api-keys')
@@ -254,8 +279,12 @@ export class AdminController {
   @ApiBody({ type: UpdateApiKeyDto })
   @ApiOkResponse({ type: AdminApiKeySwagger, description: 'Updated API key record' })
   @ApiNotFoundResponse({ description: 'No API key found for the given ID' })
-  updateApiKey(@Param('id') id: string, @Body() dto: UpdateApiKeyDto) {
-    return this.adminService.updateApiKey(id, dto);
+  updateApiKey(
+    @Param('id') id: string,
+    @Body() dto: UpdateApiKeyDto,
+    @RequestHeader('x-audit-reason') reason?: string,
+  ) {
+    return this.adminService.updateApiKey(id, dto, reason);
   }
 
   @Delete('api-keys/:id')
@@ -415,25 +444,100 @@ export class AdminController {
   triggerGtfsIngest(
     @Query('force') force?: string,
     @Query('feed') feed?: string,
+    @RequestHeader('x-audit-reason') reason?: string,
   ) {
     const forceFlag =
       force === undefined ? true : force !== 'false' && force !== '0';
-    return this.adminService.triggerGtfsIngest(forceFlag, feed);
+    return this.adminService.triggerGtfsIngest(forceFlag, feed, reason);
   }
 
   @Delete('gtfs/cache')
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
-    summary: 'Flush all Redis cache entries',
+    summary: 'Flush application Redis cache entries',
     description:
-      'Removes all keys from the Redis cache. ' +
+      'Removes application cache keys while preserving the audit retry stream. ' +
       'Use this after a manual GTFS ingest or to force a fresh pull from upstream APIs. ' +
       'Clients will experience slightly higher latency on the next request while caches are warmed.',
   })
   @ApiNoContentResponse({ description: 'Cache flushed successfully' })
-  async flushCache() {
-    await this.adminService.flushCache();
+  async flushCache(@RequestHeader('x-audit-reason') reason: string) {
+    await this.adminService.flushCache(reason);
+  }
+
+  // ─── Notifications ────────────────────────────────────────────────────────
+
+  @Post('notifications/test')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Send a test push to the calling admin\'s own devices',
+    description:
+      'Sends directly to every device the calling admin has registered via POST /push/devices — ' +
+      'the quickest way to confirm push delivery end-to-end without affecting real riders.',
+  })
+  @ApiBody({ type: AdminTestNotificationDto, required: false })
+  sendTestNotification(
+    @Req() req: Request,
+    @Body() dto: AdminTestNotificationDto,
+    @RequestHeader('x-audit-reason') reason: string,
+  ) {
+    const user = (req as unknown as Record<string, unknown>)['user'] as
+      | { userId: string }
+      | undefined;
+    return this.adminService.sendTestNotification(
+      user?.userId ?? '',
+      dto.title ?? 'Test notification',
+      dto.body ?? 'This is a test push from the admin portal.',
+      reason,
+    );
+  }
+
+  @Post('notifications/service-alert')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Publish an on-demand service-issue alert to a line',
+    description:
+      'Broadcasts to the line\'s FCM topic and opens (or refreshes) that line\'s active health ' +
+      'alert, so it shows up on the app\'s network-health card exactly like an automatically ' +
+      'detected one.',
+  })
+  @ApiBody({ type: AdminServiceAlertDto })
+  async sendServiceAlert(
+    @Body() dto: AdminServiceAlertDto,
+    @RequestHeader('x-audit-reason') reason: string,
+  ) {
+    await this.adminService.sendServiceAlert(
+      dto.line,
+      dto.title,
+      dto.body,
+      dto.severity ?? 'disruption',
+      reason,
+    );
+    return { success: true };
+  }
+
+  @Get('notifications/active-alerts')
+  @ApiOperation({ summary: 'List every line currently showing an active health alert' })
+  getActiveLineAlerts() {
+    return this.adminService.getActiveLineAlerts();
+  }
+
+  @Post('notifications/active-alerts/:line/resolve')
+  @ApiOperation({
+    summary: 'Manually clear a line\'s active alert',
+    description: 'Resolves the alert immediately rather than waiting for the next scan cycle to see the condition has cleared.',
+  })
+  @ApiParam({ name: 'line', description: 'Rider-facing line code (e.g. T1, CCN, M1)' })
+  async resolveLineAlert(
+    @Param('line') line: string,
+    @RequestHeader('x-audit-reason') reason: string,
+  ) {
+    const resolved = await this.adminService.resolveLineAlert(
+      line.toUpperCase(),
+      reason,
+    );
+    return { resolved };
   }
 
   // ─── Health ───────────────────────────────────────────────────────────────
@@ -463,4 +567,3 @@ export class AdminController {
     return this.adminService.getSystemOverview();
   }
 }
-

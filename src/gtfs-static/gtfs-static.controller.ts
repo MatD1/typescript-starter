@@ -6,6 +6,7 @@ import {
   UseGuards,
   ParseIntPipe,
   ParseEnumPipe,
+  Headers,
 } from '@nestjs/common';
 import {
   ApiOkResponse,
@@ -26,12 +27,17 @@ import {
   PaginatedTripsObject,
   PaginatedStopTimesObject,
 } from './dto/gtfs-static.objects';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS } from '../audit/audit.types';
 
 @ApiTags('gtfs-static')
 @ApiSecurity('X-API-Key')
 @Controller('gtfs-static')
 export class GtfsStaticController {
-  constructor(private readonly gtfsStaticService: GtfsStaticService) { }
+  constructor(
+    private readonly gtfsStaticService: GtfsStaticService,
+    private readonly audit: AuditService,
+  ) { }
 
   @Post('ingest')
   @UseGuards(AdminGuard, RolesGuard)
@@ -62,18 +68,60 @@ export class GtfsStaticController {
     description:
       'When true (default), bypass Last-Modified/S3 skip and re-GET from TfNSW. Pass false to allow unchanged skips.',
   })
-  ingest(
+  async ingest(
     @Query('mode') mode?: string,
     @Query('feed') feed?: string,
     @Query('force') force?: string,
+    @Headers('x-audit-reason') reason?: string,
   ) {
     const target = (feed ?? mode)?.trim() || undefined;
     // Default force=true for both full-catalog and single-feed (matches admin ingest).
     const forceFlag =
       force === undefined ? true : force === 'true' || force === '1';
     const options = { force: forceFlag };
-    if (target) return this.gtfsStaticService.ingestMode(target, options);
-    return this.gtfsStaticService.ingestAll(options);
+    const attempt = await this.audit.recordAttempt({
+      category: 'gtfs',
+      action: AUDIT_ACTIONS.GTFS_INGEST_ATTEMPTED,
+      severity: 'high',
+      targetType: 'gtfs_feed',
+      targetId: target ?? 'all',
+      reason,
+      metadata: options,
+    });
+    try {
+      const result = target
+        ? await this.gtfsStaticService.ingestMode(target, options)
+        : await this.gtfsStaticService.ingestAll(options);
+      await this.audit.record({
+        category: 'gtfs',
+        action: AUDIT_ACTIONS.GTFS_INGEST_COMPLETED,
+        outcome: 'succeeded',
+        targetType: 'gtfs_feed',
+        targetId: target ?? 'all',
+        reason,
+        correlationId: attempt.id,
+        metadata: {
+          resultCount: Array.isArray(result) ? result.length : 1,
+        },
+      });
+      return result;
+    } catch (error) {
+      await this.audit.record({
+        category: 'gtfs',
+        action: AUDIT_ACTIONS.GTFS_INGEST_FAILED,
+        outcome: 'failed',
+        severity: 'high',
+        targetType: 'gtfs_feed',
+        targetId: target ?? 'all',
+        reason,
+        correlationId: attempt.id,
+        error: {
+          code: 'GTFS_INGEST_FAILED',
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+      throw error;
+    }
   }
 
   @Get('ingest/status')

@@ -4,6 +4,8 @@ export default {
     './src/database/schema/gtfs.schema.ts',
     './src/database/schema/request-log.schema.ts',
     './src/database/schema/history.schema.ts',
+    './src/database/schema/push.schema.ts',
+    './src/database/schema/audit.schema.ts',
   ],
   out: './drizzle',
   dialect: 'postgresql',

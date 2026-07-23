@@ -20,6 +20,9 @@ import { SupabaseAuthService } from './supabase-auth.service';
 import { Public } from '../common/decorators/public.decorator';
 import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 import { SessionTokenResponseSwagger } from './dto/auth.swagger-schemas';
+import { AuditService } from '../audit/audit.service';
+import { AuditContextService } from '../audit/audit.context';
+import { AUDIT_ACTIONS } from '../audit/audit.types';
 
 class SupabaseExchangeDto {
   @ApiProperty({
@@ -37,7 +40,11 @@ class SupabaseExchangeDto {
 @ApiTags('auth')
 @Controller('auth/supabase')
 export class SupabaseAuthController {
-  constructor(private readonly supabaseAuthService: SupabaseAuthService) { }
+  constructor(
+    private readonly supabaseAuthService: SupabaseAuthService,
+    private readonly audit: AuditService,
+    private readonly auditContext: AuditContextService,
+  ) { }
 
   @Post('exchange')
   @Throttle({ default: { limit: 10, ttl: 900_000 } })
@@ -63,8 +70,34 @@ export class SupabaseAuthController {
   async exchange(@Body() dto: SupabaseExchangeDto) {
     if (!dto.token) throw new BadRequestException('token is required');
     try {
-      return await this.supabaseAuthService.exchangeSupabaseToken(dto.token);
+      const result =
+        await this.supabaseAuthService.exchangeSupabaseToken(dto.token);
+      this.auditContext.setActor({
+        type: 'user',
+        id: result.userId,
+        role: result.role,
+      });
+      await this.audit.recordBestEffort({
+        category: 'authentication',
+        action: AUDIT_ACTIONS.AUTH_TOKEN_EXCHANGED,
+        outcome: 'succeeded',
+        source: 'auth',
+        targetType: 'user',
+        targetId: result.userId,
+      });
+      return result;
     } catch (err) {
+      await this.audit.recordBestEffort({
+        category: 'authentication',
+        action: AUDIT_ACTIONS.AUTH_LOGIN_FAILED,
+        outcome: 'failed',
+        severity: 'warning',
+        source: 'auth',
+        error: {
+          code: 'TOKEN_EXCHANGE_FAILED',
+          message: err instanceof Error ? err.message : 'Exchange failed',
+        },
+      });
       if (err instanceof HttpException) {
         throw err;
       }

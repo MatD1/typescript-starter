@@ -3,6 +3,7 @@ import {
   IsBoolean,
   IsIn,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   Max,
@@ -246,4 +247,38 @@ export class AdminStatsTopQueryDto {
   @IsOptional()
   @IsString()
   to?: string;
+}
+
+export class AdminTestNotificationDto {
+  @ApiPropertyOptional({ description: 'Notification title', default: 'Test notification' })
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @ApiPropertyOptional({ description: 'Notification body', default: 'This is a test push from the admin portal.' })
+  @IsOptional()
+  @IsString()
+  body?: string;
+}
+
+export class AdminServiceAlertDto {
+  @ApiProperty({ description: 'Rider-facing line code the alert applies to (e.g. T1, CCN, M1)' })
+  @IsString()
+  @IsNotEmpty()
+  line!: string;
+
+  @ApiProperty({ description: 'Notification title / alert headline' })
+  @IsString()
+  @IsNotEmpty()
+  title!: string;
+
+  @ApiProperty({ description: 'Notification body / alert detail' })
+  @IsString()
+  @IsNotEmpty()
+  body!: string;
+
+  @ApiPropertyOptional({ description: 'Alert severity', enum: ['delays', 'cancellations', 'disruption'], default: 'disruption' })
+  @IsOptional()
+  @IsIn(['delays', 'cancellations', 'disruption'])
+  severity?: 'delays' | 'cancellations' | 'disruption';
 }

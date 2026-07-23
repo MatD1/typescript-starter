@@ -7,6 +7,13 @@ import { ValidationPipe } from "@nestjs/common";
 import { Request, Response, NextFunction } from "express";
 
 export function configureApp(app: INestApplication) {
+    const trustProxy = process.env.TRUST_PROXY?.trim();
+    if (trustProxy) {
+        app.getHttpAdapter().getInstance().set(
+            'trust proxy',
+            trustProxy === 'true' ? 1 : trustProxy,
+        );
+    }
     app.use(
         helmet({
             crossOriginEmbedderPolicy: process.env.NODE_ENV === 'production',
@@ -96,6 +103,7 @@ export function configureApp(app: INestApplication) {
         .addTag('gtfs-static', 'GTFS static timetable data')
         .addTag('auth', 'Authentication and API key management')
         .addTag('Admin', 'Admin dashboard: users, API keys, logs, stats, GTFS management, health')
+        .addTag('Admin Audit', 'Append-only audit events, exports, archives, and integrity verification')
         .build();
 
     const document = SwaggerModule.createDocument(app, config);

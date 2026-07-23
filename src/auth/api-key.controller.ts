@@ -33,6 +33,9 @@ import {
   ApiKeyListItemSwagger,
   RevokeSuccessSwagger,
 } from './dto/auth.swagger-schemas';
+import { AuditService } from '../audit/audit.service';
+import { AuditContextService } from '../audit/audit.context';
+import { AUDIT_ACTIONS } from '../audit/audit.types';
 
 class CreateApiKeyDto {
   @ApiPropertyOptional({
@@ -74,7 +77,11 @@ class CreateApiKeyDto {
 @Controller('api-keys')
 @ApiExtraModels(ApiKeyResponseSwagger, ApiKeyListItemSwagger, RevokeSuccessSwagger)
 export class ApiKeyController {
-  constructor(private readonly apiKeyService: ApiKeyService) { }
+  constructor(
+    private readonly apiKeyService: ApiKeyService,
+    private readonly audit: AuditService,
+    private readonly auditContext: AuditContextService,
+  ) { }
 
   @Post()
   @ApiOperation({
@@ -95,18 +102,38 @@ export class ApiKeyController {
     const sessionInfo = await this.apiKeyService.getUserFromSession(sessionToken);
     if (!sessionInfo)
       throw new UnauthorizedException('Invalid or expired session token');
+    this.auditContext.setActor({
+      type: 'user',
+      id: sessionInfo.userId,
+      role: sessionInfo.role,
+    });
 
     let targetPermission = dto.permissionLevel || 'user';
     if (sessionInfo.role !== 'admin' && targetPermission !== 'user') {
       targetPermission = 'user';
     }
 
-    return this.apiKeyService.createApiKey(
+    const created = await this.apiKeyService.createApiKey(
       sessionInfo.userId,
       dto.name,
       targetPermission,
       dto.expiresAt,
     );
+    await this.audit.record({
+      category: 'api_key',
+      action: AUDIT_ACTIONS.API_KEY_CREATED,
+      outcome: 'succeeded',
+      targetType: 'api_key',
+      targetId: created.id,
+      after: {
+        id: created.id,
+        name: dto.name,
+        start: created.start,
+        permissions: targetPermission,
+        expiresAt: dto.expiresAt,
+      },
+    });
+    return created;
   }
 
   @Get()
@@ -126,6 +153,11 @@ export class ApiKeyController {
     const sessionInfo = await this.apiKeyService.getUserFromSession(sessionToken);
     if (!sessionInfo)
       throw new UnauthorizedException('Invalid or expired session token');
+    this.auditContext.setActor({
+      type: 'user',
+      id: sessionInfo.userId,
+      role: sessionInfo.role,
+    });
     return this.apiKeyService.listApiKeys(sessionInfo.userId);
   }
 
@@ -143,7 +175,20 @@ export class ApiKeyController {
     const sessionInfo = await this.apiKeyService.getUserFromSession(sessionToken);
     if (!sessionInfo)
       throw new UnauthorizedException('Invalid or expired session token');
+    this.auditContext.setActor({
+      type: 'user',
+      id: sessionInfo.userId,
+      role: sessionInfo.role,
+    });
     await this.apiKeyService.revokeApiKey(id, sessionInfo.userId);
+    await this.audit.record({
+      category: 'api_key',
+      action: AUDIT_ACTIONS.API_KEY_REVOKED,
+      outcome: 'succeeded',
+      severity: 'high',
+      targetType: 'api_key',
+      targetId: id,
+    });
     return { success: true };
   }
 

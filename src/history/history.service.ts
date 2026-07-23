@@ -1,12 +1,27 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, gte, lte, sql } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../database/database.module';
 import {
+  disruptionEvents,
   linePerformanceDaily,
   networkSnapshots,
 } from '../database/schema/history.schema';
 import { sydneyDaysAgo, sydneyLocalDate } from './sydney-date.util';
 import { LineHealthAlertsService } from './line-health-alerts.service';
+
+export interface PurgeHistoryOptions {
+  from?: string;
+  to?: string;
+  mode?: string;
+  line?: string;
+  confirmFullWipe?: boolean;
+}
+
+export interface PurgeHistoryResult {
+  networkSnapshotsDeleted: number;
+  linePerformanceDailyDeleted: number;
+  disruptionEventsDeleted: number;
+}
 
 export interface LinePerformanceDay {
   day: string;
@@ -446,5 +461,69 @@ export class HistoryService {
   /** Today in Sydney — used by tests and callers needing calendar alignment. */
   sydneyToday(): string {
     return sydneyLocalDate();
+  }
+
+  /**
+   * Admin purge of accumulated history data — built after a cancellation
+   * over-counting bug (fixed separately) left several days of inflated
+   * `network_snapshots`/`line_performance_daily` rows. Scoped by date range
+   * and optionally mode/line; requires either a range or an explicit
+   * `confirmFullWipe` so a blank form can't nuke everything by accident.
+   * Leaves `line_health_alerts` alone — that's live alert state, not
+   * historical accumulation.
+   */
+  async purgeHistory(options: PurgeHistoryOptions): Promise<PurgeHistoryResult> {
+    const { from, to, mode, line, confirmFullWipe } = options;
+    if (!from && !to && !confirmFullWipe) {
+      throw new BadRequestException(
+        'Provide a from/to date range, or set confirmFullWipe=true to purge all history.',
+      );
+    }
+
+    const snapshotConditions = [
+      from ? gte(networkSnapshots.capturedAt, new Date(from)) : undefined,
+      to ? lte(networkSnapshots.capturedAt, new Date(to)) : undefined,
+      mode ? eq(networkSnapshots.mode, mode) : undefined,
+      line ? eq(networkSnapshots.line, line.toUpperCase()) : undefined,
+    ].filter((c): c is NonNullable<typeof c> => c !== undefined);
+
+    const dailyConditions = [
+      from ? gte(linePerformanceDaily.day, from) : undefined,
+      to ? lte(linePerformanceDaily.day, to) : undefined,
+      mode ? eq(linePerformanceDaily.mode, mode) : undefined,
+      line ? eq(linePerformanceDaily.line, line.toUpperCase()) : undefined,
+    ].filter((c): c is NonNullable<typeof c> => c !== undefined);
+
+    const disruptionConditions = [
+      from ? gte(disruptionEvents.capturedAt, new Date(from)) : undefined,
+      to ? lte(disruptionEvents.capturedAt, new Date(to)) : undefined,
+      mode ? eq(disruptionEvents.mode, mode) : undefined,
+      line ? eq(disruptionEvents.line, line.toUpperCase()) : undefined,
+    ].filter((c): c is NonNullable<typeof c> => c !== undefined);
+
+    const [snapshotsDeleted, dailyDeleted, disruptionsDeleted] =
+      await this.db.transaction(async (tx) => {
+        const snapshots = await tx
+          .delete(networkSnapshots)
+          .where(snapshotConditions.length ? and(...snapshotConditions) : undefined)
+          .returning({ id: networkSnapshots.id });
+        const daily = await tx
+          .delete(linePerformanceDaily)
+          .where(dailyConditions.length ? and(...dailyConditions) : undefined)
+          .returning({ day: linePerformanceDaily.day });
+        const disruptions = await tx
+          .delete(disruptionEvents)
+          .where(
+            disruptionConditions.length ? and(...disruptionConditions) : undefined,
+          )
+          .returning({ id: disruptionEvents.id });
+        return [snapshots.length, daily.length, disruptions.length];
+      });
+
+    return {
+      networkSnapshotsDeleted: snapshotsDeleted,
+      linePerformanceDailyDeleted: dailyDeleted,
+      disruptionEventsDeleted: disruptionsDeleted,
+    };
   }
 }

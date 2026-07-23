@@ -195,16 +195,27 @@ export class AdminResolver {
     @Context() ctx: { req: Request },
     @Args('id', { type: () => ID }) id: string,
     @Args('input') input: UpdateUserInput,
+    @Args('reason') reason: string,
   ): Promise<AdminUser> {
-    return this.adminService.updateUser(id, input, ctx.req.headers as unknown as Headers);
+    return this.adminService.updateUser(
+      id,
+      input,
+      ctx.req.headers as unknown as Headers,
+      reason,
+    );
   }
 
   @Mutation(() => Boolean, { name: 'adminDeleteUser' })
   async adminDeleteUser(
     @Context() ctx: { req: Request },
     @Args('id', { type: () => ID }) id: string,
+    @Args('reason') reason: string,
   ): Promise<boolean> {
-    await this.adminService.deleteUser(id, ctx.req.headers as unknown as Headers);
+    await this.adminService.deleteUser(
+      id,
+      ctx.req.headers as unknown as Headers,
+      reason,
+    );
     return true;
   }
 
@@ -212,8 +223,14 @@ export class AdminResolver {
   async adminImpersonateUser(
     @Args('id', { type: () => ID }) id: string,
     @Context() ctx: { req: Request },
+    @Args('reason') reason: string,
   ): Promise<string> {
-    const res = await this.adminService.impersonateUser(this.extractUserId(ctx), id, ctx.req.headers as unknown as Headers);
+    const res = await this.adminService.impersonateUser(
+      this.extractUserId(ctx),
+      id,
+      ctx.req.headers as unknown as Headers,
+      reason,
+    );
     return res.session.token;
   }
 
@@ -227,8 +244,9 @@ export class AdminResolver {
   async adminUpdateApiKey(
     @Args('id', { type: () => ID }) id: string,
     @Args('input') input: UpdateApiKeyInput,
+    @Args('reason') reason: string,
   ): Promise<AdminApiKey> {
-    return this.adminService.updateApiKey(id, input);
+    return this.adminService.updateApiKey(id, input, reason);
   }
 
   @Mutation(() => Boolean, { name: 'adminDeleteApiKey' })
@@ -263,13 +281,14 @@ export class AdminResolver {
         'Optional feedKey (e.g. metro, buses/GSBC001) or logical mode (e.g. lightrail). Omit for full catalog.',
     })
     feed?: string,
+    @Args('reason') reason?: string,
   ): Promise<GtfsIngestResult> {
-    return this.adminService.triggerGtfsIngest(force ?? true, feed);
+    return this.adminService.triggerGtfsIngest(force ?? true, feed, reason);
   }
 
   @Mutation(() => Boolean, { name: 'adminFlushCache' })
-  async adminFlushCache(): Promise<boolean> {
-    await this.adminService.flushCache();
+  async adminFlushCache(@Args('reason') reason: string): Promise<boolean> {
+    await this.adminService.flushCache(reason);
     return true;
   }
 }

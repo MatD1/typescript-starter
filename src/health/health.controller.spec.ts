@@ -12,11 +12,20 @@ describe('HealthController', () => {
 
   it('reports ready when the TfNSW key is configured', () => {
     const controller = new HealthController({
-      get: jest.fn().mockReturnValue('configured-key'),
+      get: jest.fn((key: string) =>
+        key === 'transport.apiKey'
+          ? 'configured-key'
+          : key === 'audit.archive.disabled'
+            ? true
+            : undefined,
+      ),
     } as unknown as ConfigService);
     expect(controller.ready()).toEqual({
       status: 'ready',
-      checks: { tfnswApiKeyConfigured: true },
+      checks: {
+        tfnswApiKeyConfigured: true,
+        auditArchiveConfigured: true,
+      },
     });
   });
 

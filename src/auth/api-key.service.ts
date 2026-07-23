@@ -57,12 +57,18 @@ export class ApiKeyService {
    */
   async resolveUserFromBearer(
     credential: string,
-  ): Promise<{ userId: string; role: string; banned: boolean } | null> {
+  ): Promise<{
+    userId: string;
+    role: string;
+    banned: boolean;
+    impersonatedBy?: string;
+  } | null> {
     const cacheKey = `auth:bearer:${credential}`;
     const cached = await this.cache.get<{
       userId: string;
       role: string;
       banned: boolean;
+      impersonatedBy?: string;
     } | null>(cacheKey);
     if (cached !== null) return cached;
 
@@ -264,12 +270,14 @@ export class ApiKeyService {
 
   async getUserFromSession(
     sessionToken: string,
-  ): Promise<{ userId: string; role: string } | null> {
+  ): Promise<{ userId: string; role: string; impersonatedBy?: string } | null> {
     const cacheKey = `session:user-full:${sessionToken}`;
 
-    const cached = await this.cache.get<{ userId: string; role: string } | null>(
-      cacheKey,
-    );
+    const cached = await this.cache.get<{
+      userId: string;
+      role: string;
+      impersonatedBy?: string;
+    } | null>(cacheKey);
     if (cached !== null) return cached;
 
     const rows = await this.db
@@ -277,6 +285,7 @@ export class ApiKeyService {
         userId: user.id,
         role: user.role,
         expiresAt: session.expiresAt,
+        impersonatedBy: session.impersonatedBy,
       })
       .from(session)
       .innerJoin(user, eq(session.userId, user.id))
@@ -299,9 +308,12 @@ export class ApiKeyService {
     
     if (expiresTime < Date.now()) return null;
 
-    const result = { userId: s.userId, role: s.role };
+    const result = {
+      userId: s.userId,
+      role: s.role,
+      ...(s.impersonatedBy ? { impersonatedBy: s.impersonatedBy } : {}),
+    };
     await this.cache.set(cacheKey, result, SESSION_TTL);
     return result;
   }
 }
-

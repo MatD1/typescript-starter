@@ -22,6 +22,8 @@ import { SupabaseAuthService } from './supabase-auth.service';
 import { Public } from '../common/decorators/public.decorator';
 import { IsOptional, IsString } from 'class-validator';
 import { SessionTokenResponseSwagger } from './dto/auth.swagger-schemas';
+import { AuditService } from '../audit/audit.service';
+import { AUDIT_ACTIONS } from '../audit/audit.types';
 
 class RefreshDto {
   @ApiPropertyOptional({
@@ -38,7 +40,10 @@ class RefreshDto {
 @ApiTags('auth')
 @Controller('auth')
 export class SessionController {
-  constructor(private readonly supabaseAuthService: SupabaseAuthService) { }
+  constructor(
+    private readonly supabaseAuthService: SupabaseAuthService,
+    private readonly audit: AuditService,
+  ) { }
 
   @Post('refresh')
   @Throttle({ default: { limit: 10, ttl: 900_000 } })
@@ -84,8 +89,33 @@ export class SessionController {
     }
 
     try {
-      return await this.supabaseAuthService.refreshSession(refreshToken);
+      const result = await this.supabaseAuthService.refreshSession(refreshToken);
+      await this.audit.recordBestEffort({
+        category: 'authentication',
+        action: AUDIT_ACTIONS.AUTH_TOKEN_REFRESHED,
+        outcome: 'succeeded',
+        source: 'auth',
+        metadata: { role: result.role },
+      });
+      return result;
     } catch (err) {
+      await this.audit.recordBestEffort({
+        category: 'authentication',
+        action:
+          err instanceof Error && err.message.toLowerCase().includes('reuse')
+            ? AUDIT_ACTIONS.AUTH_REFRESH_REUSE_DETECTED
+            : AUDIT_ACTIONS.AUTH_TOKEN_REFRESH_FAILED,
+        outcome: 'failed',
+        severity:
+          err instanceof Error && err.message.toLowerCase().includes('reuse')
+            ? 'critical'
+            : 'warning',
+        source: 'auth',
+        error: {
+          code: 'TOKEN_REFRESH_FAILED',
+          message: err instanceof Error ? err.message : 'Refresh failed',
+        },
+      });
       if (err instanceof HttpException) {
         throw err;
       }
