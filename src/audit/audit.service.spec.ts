@@ -81,6 +81,30 @@ describe('AuditService write policies', () => {
     expect(db.insert).not.toHaveBeenCalled();
   });
 
+  it('supplies a traceable reason for automatic high-risk system events', async () => {
+    const chain = insertChain([{ id: 'event-1' }]);
+    const db = { insert: jest.fn(() => ({ values: chain.values })) };
+    const service = new AuditService(
+      db as any,
+      { current: jest.fn() } as unknown as AuditContextService,
+      {} as CacheService,
+    );
+
+    await service.record({
+      category: 'gtfs',
+      action: AUDIT_ACTIONS.GTFS_INGEST_ATTEMPTED,
+      outcome: 'attempted',
+      actor: { type: 'system', id: 'gtfs-scheduler' },
+      source: 'job',
+    });
+
+    expect(chain.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'Automatic backend operation: gtfs.ingest.attempted',
+      }),
+    );
+  });
+
   it('propagates transactional insert failures to roll back the mutation', async () => {
     const chain = insertChain(new Error('audit unavailable'));
     const tx = { insert: jest.fn(() => ({ values: chain.values })) };

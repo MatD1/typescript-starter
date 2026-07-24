@@ -25,6 +25,7 @@ export class GtfsStaticScheduler {
       actor: { type: 'system', id: 'gtfs-scheduler' },
       targetType: 'gtfs_feed',
       targetId: 'all',
+      reason: 'Scheduled nightly GTFS static ingestion',
     });
     try {
       const results = await this.gtfsStaticService.ingestAll();

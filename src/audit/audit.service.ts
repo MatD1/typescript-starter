@@ -205,13 +205,17 @@ export class AuditService {
     input: AuditEventInput,
   ): Promise<AuditRow> {
     const current = this.context.current();
+    const actor = input.actor ?? current?.actor ?? { type: 'system' as const };
+    const isExplicitSystemEvent =
+      input.actor?.type === 'system' || current?.actor.type === 'system';
     const reason = HIGH_RISK_REASON_ACTIONS.has(input.action)
-      ? validateAuditReason(input.reason)
+      ? isExplicitSystemEvent && !input.reason?.trim()
+        ? `Automatic backend operation: ${input.action}`
+        : validateAuditReason(input.reason)
       : sanitizeAuditText(input.reason, 1000);
     const before = redactAuditRecord(input.before);
     const after = redactAuditRecord(input.after);
     const metadata = redactAuditRecord(input.metadata);
-    const actor = input.actor ?? current?.actor ?? { type: 'system' as const };
 
     const rows = await executor
       .insert(auditEvent)
