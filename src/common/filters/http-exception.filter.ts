@@ -7,12 +7,16 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Response } from 'express';
-import { GqlArgumentsHost, GqlContextType } from '@nestjs/graphql';
+import { GqlContextType } from '@nestjs/graphql';
 import { GraphQLError } from 'graphql';
+import { AuditContextService } from '../../audit/audit.context';
+import { sanitizeAuditText } from '../../audit/audit.redaction';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(GlobalExceptionFilter.name);
+
+  constructor(private readonly auditContext: AuditContextService) {}
 
   catch(exception: unknown, host: ArgumentsHost) {
     if (host.getType<GqlContextType>() === 'graphql') {
@@ -26,15 +30,6 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           : exception instanceof Error
             ? exception.message
             : 'Internal server error';
-      const stack = exception instanceof Error ? exception.stack : undefined;
-      if (status >= 500) {
-        this.logger.error(
-          `GraphQL error: ${message}`,
-          stack ?? String(exception),
-        );
-      } else {
-        this.logger.warn(`GraphQL request rejected [${status}]: ${message}`);
-      }
       const code =
         status === HttpStatus.UNAUTHORIZED
           ? 'UNAUTHENTICATED'
@@ -64,15 +59,37 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           ? body
           : ((body as { message?: string }).message ?? message);
     } else if (exception instanceof Error) {
-      this.logger.error(exception.message, exception.stack);
+      message = exception.message;
+    }
+
+    const requestId = this.auditContext.current()?.requestId;
+    if (status >= 500) {
+      this.logger.error(
+        {
+          err: exception,
+          requestId,
+          statusCode: status,
+        },
+        'REST request failed',
+      );
     } else {
-      this.logger.error('Unknown exception', JSON.stringify({ exception }));
+      this.logger.warn(
+        {
+          requestId,
+          statusCode: status,
+          errorMessage: sanitizeAuditText(message, 1000),
+          errorType:
+            exception instanceof Error ? exception.name : typeof exception,
+        },
+        'REST request rejected',
+      );
     }
 
     response.status(status).json({
       statusCode: status,
       message,
       timestamp: new Date().toISOString(),
+      requestId,
     });
   }
 }

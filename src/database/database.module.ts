@@ -32,11 +32,13 @@ export type DrizzleDB = NodePgDatabase<AppSchema>;
       useFactory: (configService: ConfigService): DrizzleDB => {
         const pool = new Pool({
           connectionString: configService.get<string>('database.url'),
-          // Serverless optimizations:
-          // Keep the pool small and allow connections to expire quickly to avoid 
-          // saturating the DB during bursty serverless scale-outs.
-          max: 1,
-          idleTimeoutMillis: 1000,
+          // This is a single long-running Railway process, not a serverless
+          // function — a pool of 1 starves under any concurrent load (e.g.
+          // many devices paging through the full stops catalog at once) and
+          // causes connection-acquisition timeouts under the misleading
+          // "Failed query" label from GlobalExceptionFilter.
+          max: 10,
+          idleTimeoutMillis: 30000,
           connectionTimeoutMillis: 5000,
         });
         return drizzle(pool, { schema });

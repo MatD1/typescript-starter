@@ -76,10 +76,14 @@ export class AdminApiKeySwagger {
   @ApiProperty({ description: 'Is rate limiting enabled' })
   rateLimitEnabled!: boolean;
 
-  @ApiPropertyOptional({ description: 'Max requests per minute/window (0 = unlimited)' })
+  @ApiPropertyOptional({
+    description: 'Max requests per minute/window (0 = unlimited)',
+  })
   rateLimitMax?: number;
 
-  @ApiPropertyOptional({ description: 'Rate limit time window in milliseconds' })
+  @ApiPropertyOptional({
+    description: 'Rate limit time window in milliseconds',
+  })
   rateLimitTimeWindow?: number;
 
   @ApiProperty({ description: 'Total request count' })
@@ -102,7 +106,10 @@ export class AdminApiKeySwagger {
 }
 
 export class AdminApiKeyDetailSwagger extends AdminApiKeySwagger {
-  @ApiProperty({ type: [DailyUsageBucketSwagger], description: 'Daily usage for last 7 days' })
+  @ApiProperty({
+    type: [DailyUsageBucketSwagger],
+    description: 'Daily usage for last 7 days',
+  })
   usage7d!: DailyUsageBucketSwagger[];
 }
 
@@ -126,6 +133,9 @@ export class AdminLogEntrySwagger {
   @ApiProperty({ description: 'Log entry ID' })
   id!: string;
 
+  @ApiPropertyOptional({ description: 'Request correlation ID' })
+  requestId?: string;
+
   @ApiProperty({ description: 'HTTP method' })
   method!: string;
 
@@ -144,8 +154,19 @@ export class AdminLogEntrySwagger {
   @ApiProperty({ description: 'Response time in milliseconds' })
   responseTimeMs!: number;
 
-  @ApiPropertyOptional({ description: 'Client IP address' })
+  @ApiPropertyOptional({
+    description: 'Deprecated; raw IP addresses are no longer retained',
+    deprecated: true,
+  })
   ipAddress?: string;
+
+  @ApiPropertyOptional({ description: 'Coarse client network prefix' })
+  ipNetwork?: string;
+
+  @ApiPropertyOptional({
+    description: 'Keyed client IP fingerprint for correlation',
+  })
+  ipFingerprint?: string;
 
   @ApiPropertyOptional({ description: 'User-Agent header' })
   userAgent?: string;
@@ -153,12 +174,18 @@ export class AdminLogEntrySwagger {
   @ApiPropertyOptional({ description: 'Error message (if status >= 400)' })
   error?: string;
 
+  @ApiPropertyOptional({ description: 'Structured error code or type' })
+  errorCode?: string;
+
   @ApiProperty({ description: 'Request timestamp' })
   createdAt!: Date;
 }
 
 export class AdminLogPageSwagger {
-  @ApiProperty({ type: [AdminLogEntrySwagger], description: 'List of log entries' })
+  @ApiProperty({
+    type: [AdminLogEntrySwagger],
+    description: 'List of log entries',
+  })
   data!: AdminLogEntrySwagger[];
 
   @ApiPropertyOptional({ description: 'Cursor for next page' })
@@ -251,7 +278,9 @@ export class GtfsFeedRunStatusSwagger {
   @ApiPropertyOptional({ description: 'Error message if failed' })
   error?: string;
 
-  @ApiPropertyOptional({ description: 'True when HEAD Last-Modified matched S3 and GET was skipped' })
+  @ApiPropertyOptional({
+    description: 'True when HEAD Last-Modified matched S3 and GET was skipped',
+  })
   skippedUnchanged?: boolean;
 }
 
@@ -259,7 +288,10 @@ export class GtfsStatusSwagger {
   @ApiPropertyOptional({ description: 'Last ingest timestamp (ISO 8601)' })
   lastIngest?: string;
 
-  @ApiProperty({ type: [GtfsTableCountSwagger], description: 'Row counts per table' })
+  @ApiProperty({
+    type: [GtfsTableCountSwagger],
+    description: 'Row counts per table',
+  })
   tableCounts!: GtfsTableCountSwagger[];
 
   @ApiPropertyOptional({
@@ -273,10 +305,16 @@ export class GtfsIngestResultSwagger {
   @ApiProperty({ description: 'Whether all feeds ingested successfully' })
   success!: boolean;
 
-  @ApiProperty({ type: [String], description: 'Logical modes that were ingested' })
+  @ApiProperty({
+    type: [String],
+    description: 'Logical modes that were ingested',
+  })
   modesIngested!: string[];
 
-  @ApiPropertyOptional({ type: [String], description: 'Feed keys that succeeded' })
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Feed keys that succeeded',
+  })
   feedsIngested?: string[];
 
   @ApiPropertyOptional({ type: [String], description: 'Feed keys that failed' })
@@ -308,17 +346,29 @@ export class SystemHealthSwagger {
   @ApiProperty({ description: 'Overall health status' })
   healthy!: boolean;
 
-  @ApiProperty({ type: [SystemHealthCheckSwagger], description: 'Individual check results' })
+  @ApiProperty({
+    type: [SystemHealthCheckSwagger],
+    description: 'Individual check results',
+  })
   checks!: SystemHealthCheckSwagger[];
 
-  @ApiProperty({ type: ProcessMetricsSwagger, description: 'Node.js process metrics' })
+  @ApiProperty({
+    type: ProcessMetricsSwagger,
+    description: 'Node.js process metrics',
+  })
   process!: ProcessMetricsSwagger;
 }
 
 export class SystemOverviewSwagger {
-  @ApiProperty({ type: SystemHealthSwagger, description: 'Current system health' })
+  @ApiProperty({
+    type: SystemHealthSwagger,
+    description: 'Current system health',
+  })
   health!: SystemHealthSwagger;
 
-  @ApiProperty({ type: AdminOverviewStatsSwagger, description: 'Stats overview' })
+  @ApiProperty({
+    type: AdminOverviewStatsSwagger,
+    description: 'Stats overview',
+  })
   stats!: AdminOverviewStatsSwagger;
 }

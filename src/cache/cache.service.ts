@@ -38,6 +38,22 @@ export class CacheService implements OnModuleDestroy {
     await this.client.del(key);
   }
 
+  /** Delete all keys matching `${prefix}*`. Used to invalidate a whole cached section (e.g. after a GTFS ingest). */
+  async delByPrefix(prefix: string): Promise<void> {
+    let cursor = '0';
+    do {
+      const [nextCursor, keys] = await this.client.scan(
+        cursor,
+        'MATCH',
+        `${prefix}*`,
+        'COUNT',
+        500,
+      );
+      if (keys.length) await this.client.del(...keys);
+      cursor = nextCursor;
+    } while (cursor !== '0');
+  }
+
   /**
    * Flush application cache keys while preserving the durable audit retry
    * stream. Audit delivery must not be erasable through the admin cache API.

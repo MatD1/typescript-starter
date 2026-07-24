@@ -1,20 +1,15 @@
 import { AsyncLocalStorage } from 'async_hooks';
-import { randomUUID } from 'crypto';
 import { Injectable, NestMiddleware } from '@nestjs/common';
 import type { NextFunction, Request, Response } from 'express';
 import { ConfigService } from '@nestjs/config';
-import {
-  AuditActor,
-  AuditRequestContext,
-  AuditSource,
-} from './audit.types';
+import { AuditActor, AuditRequestContext, AuditSource } from './audit.types';
 import {
   fingerprintIp,
   networkPrefix,
   sanitizeAuditText,
 } from './audit.redaction';
+import { resolveRequestId } from '../common/logging/request-id';
 
-const REQUEST_ID_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
 const storage = new AsyncLocalStorage<AuditRequestContext>();
 
 @Injectable()
@@ -55,12 +50,11 @@ export class AuditContextMiddleware implements NestMiddleware {
   }
 
   use(req: Request, res: Response, next: NextFunction): void {
-    const supplied = req.headers['x-request-id'];
-    const candidate = Array.isArray(supplied) ? supplied[0] : supplied;
     const requestId =
-      candidate && REQUEST_ID_PATTERN.test(candidate)
-        ? candidate
-        : randomUUID();
+      typeof req.id === 'string'
+        ? resolveRequestId(req.id)
+        : resolveRequestId(req.headers['x-request-id']);
+    req.id = requestId;
     res.setHeader('X-Request-ID', requestId);
 
     const ip = (req.ip ?? req.socket.remoteAddress ?? 'unknown').slice(0, 100);

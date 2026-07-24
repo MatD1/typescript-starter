@@ -206,6 +206,15 @@ export class GtfsStaticService {
           (fromCache ? ' (from S3/cache, unchanged)' : ''),
       );
 
+      if (!fromCache) {
+        // Data actually changed — drop the cached stops/routes pages so
+        // clients see the update instead of serving up to a day of staleness.
+        await Promise.all([
+          this.cache.delByPrefix('gtfs:stops:'),
+          this.cache.delByPrefix('gtfs:routes:'),
+        ]);
+      }
+
       return {
         feedKey,
         mode: logicalMode,
@@ -1002,18 +1011,34 @@ export class GtfsStaticService {
     limit = 100,
     offset = 0,
   ): Promise<PaginatedResult<typeof gtfsRoute.$inferSelect>> {
-    const baseQuery = this.db.select().from(gtfsRoute);
-    const countQuery = this.db.select({ total: count() }).from(gtfsRoute);
+    const cacheKey = `gtfs:routes:${mode ?? 'all'}:${limit}:${offset}`;
+    return this.cache.getOrSet(
+      cacheKey,
+      async () => {
+        const baseQuery = this.db.select().from(gtfsRoute);
+        const countQuery = this.db.select({ total: count() }).from(gtfsRoute);
 
-    const [data, countResult] = await Promise.all([
-      mode
-        ? baseQuery.where(eq(gtfsRoute.mode, mode)).limit(limit).offset(offset)
-        : baseQuery.limit(limit).offset(offset),
-      mode ? countQuery.where(eq(gtfsRoute.mode, mode)) : countQuery,
-    ]);
+        const [data, countResult] = await Promise.all([
+          mode
+            ? baseQuery
+                .where(eq(gtfsRoute.mode, mode))
+                .limit(limit)
+                .offset(offset)
+            : baseQuery.limit(limit).offset(offset),
+          mode ? countQuery.where(eq(gtfsRoute.mode, mode)) : countQuery,
+        ]);
 
-    const total = countResult[0]?.total ?? 0;
-    return { data, total, limit, offset, hasNextPage: offset + limit < total };
+        const total = countResult[0]?.total ?? 0;
+        return {
+          data,
+          total,
+          limit,
+          offset,
+          hasNextPage: offset + limit < total,
+        };
+      },
+      CacheTTL.GTFS_STATIC,
+    );
   }
 
   async getStops(
@@ -1021,18 +1046,37 @@ export class GtfsStaticService {
     limit = 100,
     offset = 0,
   ): Promise<PaginatedResult<typeof gtfsStop.$inferSelect>> {
-    const baseQuery = this.db.select().from(gtfsStop);
-    const countQuery = this.db.select({ total: count() }).from(gtfsStop);
+    // Static reference data (GTFS feed ingests run at most a few times a
+    // day) fetched by every device's full-catalog sync — cache each page
+    // rather than hitting Postgres on every request.
+    const cacheKey = `gtfs:stops:${mode ?? 'all'}:${limit}:${offset}`;
+    return this.cache.getOrSet(
+      cacheKey,
+      async () => {
+        const baseQuery = this.db.select().from(gtfsStop);
+        const countQuery = this.db.select({ total: count() }).from(gtfsStop);
 
-    const [data, countResult] = await Promise.all([
-      mode
-        ? baseQuery.where(eq(gtfsStop.mode, mode)).limit(limit).offset(offset)
-        : baseQuery.limit(limit).offset(offset),
-      mode ? countQuery.where(eq(gtfsStop.mode, mode)) : countQuery,
-    ]);
+        const [data, countResult] = await Promise.all([
+          mode
+            ? baseQuery
+                .where(eq(gtfsStop.mode, mode))
+                .limit(limit)
+                .offset(offset)
+            : baseQuery.limit(limit).offset(offset),
+          mode ? countQuery.where(eq(gtfsStop.mode, mode)) : countQuery,
+        ]);
 
-    const total = countResult[0]?.total ?? 0;
-    return { data, total, limit, offset, hasNextPage: offset + limit < total };
+        const total = countResult[0]?.total ?? 0;
+        return {
+          data,
+          total,
+          limit,
+          offset,
+          hasNextPage: offset + limit < total,
+        };
+      },
+      CacheTTL.GTFS_STATIC,
+    );
   }
 
   async getTrips(

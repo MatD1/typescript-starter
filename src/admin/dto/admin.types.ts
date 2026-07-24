@@ -1,4 +1,12 @@
-import { ObjectType, Field, ID, Int, InputType, registerEnumType, Float } from '@nestjs/graphql';
+import {
+  ObjectType,
+  Field,
+  ID,
+  Int,
+  InputType,
+  registerEnumType,
+  Float,
+} from '@nestjs/graphql';
 import { IsOptional, IsBoolean, IsString, IsNumber } from 'class-validator';
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
@@ -149,6 +157,9 @@ export class AdminLogEntry {
   @Field(() => ID)
   id!: string;
 
+  @Field({ nullable: true })
+  requestId?: string;
+
   @Field()
   method!: string;
 
@@ -167,14 +178,26 @@ export class AdminLogEntry {
   @Field(() => Int)
   responseTimeMs!: number;
 
-  @Field({ nullable: true })
+  @Field({
+    nullable: true,
+    deprecationReason: 'Raw IP addresses are no longer retained',
+  })
   ipAddress?: string;
+
+  @Field({ nullable: true })
+  ipNetwork?: string;
+
+  @Field({ nullable: true })
+  ipFingerprint?: string;
 
   @Field({ nullable: true })
   userAgent?: string;
 
   @Field({ nullable: true })
   error?: string;
+
+  @Field({ nullable: true })
+  errorCode?: string;
 
   @Field()
   createdAt!: Date;

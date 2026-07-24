@@ -5,9 +5,10 @@ import {
   desc,
   eq,
   gte,
-  gt,
   ilike,
+  lt,
   lte,
+  or,
   sql,
 } from 'drizzle-orm';
 import { HttpService } from '@nestjs/axios';
@@ -68,6 +69,7 @@ import type {
   SystemHealth,
   SystemOverview,
 } from './dto/admin.types';
+import { decodeRequestLogCursor, encodeRequestLogCursor } from './log-cursor';
 
 @Injectable()
 export class AdminService {
@@ -85,7 +87,7 @@ export class AdminService {
     private readonly lineHealthAlertsService: LineHealthAlertsService,
     private readonly audit: AuditService,
     private readonly auditStorage: AuditObjectStorage,
-  ) { }
+  ) {}
 
   // ─── Auth ──────────────────────────────────────────────────────────────────
 
@@ -102,7 +104,10 @@ export class AdminService {
 
   // ─── Users ─────────────────────────────────────────────────────────────────
 
-  async getUsers(query: AdminUsersQueryDto, headers: Headers): Promise<PaginatedUsers> {
+  async getUsers(
+    query: AdminUsersQueryDto,
+    headers: Headers,
+  ): Promise<PaginatedUsers> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
 
@@ -183,7 +188,10 @@ export class AdminService {
         before: { role: before.role },
         after: { role: dto.role },
       });
-      attempts.push({ action: AUDIT_ACTIONS.ADMIN_USER_ROLE_CHANGED, id: event.id });
+      attempts.push({
+        action: AUDIT_ACTIONS.ADMIN_USER_ROLE_CHANGED,
+        id: event.id,
+      });
     }
     if (dto.banned !== undefined && dto.banned !== before.banned) {
       const event = await this.audit.recordAttempt({
@@ -204,7 +212,10 @@ export class AdminService {
           banExpiresIn: dto.banExpiresIn,
         },
       });
-      attempts.push({ action: AUDIT_ACTIONS.ADMIN_USER_BAN_CHANGED, id: event.id });
+      attempts.push({
+        action: AUDIT_ACTIONS.ADMIN_USER_BAN_CHANGED,
+        id: event.id,
+      });
     }
 
     try {
@@ -259,7 +270,11 @@ export class AdminService {
     }
   }
 
-  async deleteUser(id: string, headers: Headers, reason: string): Promise<void> {
+  async deleteUser(
+    id: string,
+    headers: Headers,
+    reason: string,
+  ): Promise<void> {
     const before = await this.getUser(id);
     const attempt = await this.audit.recordAttempt({
       category: 'administration',
@@ -306,7 +321,9 @@ export class AdminService {
     headers: Headers,
     reason: string,
   ) {
-    this.logger.log(`Admin ${adminUserId} starting impersonation of ${targetUserId}`);
+    this.logger.log(
+      `Admin ${adminUserId} starting impersonation of ${targetUserId}`,
+    );
     const attempt = await this.audit.recordAttempt({
       category: 'administration',
       action: AUDIT_ACTIONS.ADMIN_IMPERSONATION_STARTED,
@@ -346,7 +363,9 @@ export class AdminService {
   }
 
   async stopImpersonating(headers: Headers) {
-    const result = await this.authService.auth.api.stopImpersonating({ headers });
+    const result = await this.authService.auth.api.stopImpersonating({
+      headers,
+    });
     await this.audit.record({
       category: 'administration',
       action: AUDIT_ACTIONS.ADMIN_IMPERSONATION_STOPPED,
@@ -405,7 +424,6 @@ export class AdminService {
     return created;
   }
 
-
   async getApiKeys(query: AdminApiKeysQueryDto): Promise<PaginatedApiKeys> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
@@ -455,10 +473,7 @@ export class AdminService {
       })
       .from(requestLog)
       .where(
-        and(
-          eq(requestLog.keyId, id),
-          gte(requestLog.createdAt, sevenDaysAgo),
-        ),
+        and(eq(requestLog.keyId, id), gte(requestLog.createdAt, sevenDaysAgo)),
       )
       .groupBy(sql`DATE(${requestLog.createdAt})`)
       .orderBy(sql`DATE(${requestLog.createdAt})`);
@@ -505,9 +520,11 @@ export class AdminService {
       updatedAt: new Date(),
     };
     if (dto.enabled !== undefined) updates.enabled = dto.enabled;
-    if (dto.rateLimitEnabled !== undefined) updates.rateLimitEnabled = dto.rateLimitEnabled;
+    if (dto.rateLimitEnabled !== undefined)
+      updates.rateLimitEnabled = dto.rateLimitEnabled;
     if (dto.rateLimitMax !== undefined) updates.rateLimitMax = dto.rateLimitMax;
-    if (dto.rateLimitTimeWindow !== undefined) updates.rateLimitTimeWindow = dto.rateLimitTimeWindow;
+    if (dto.rateLimitTimeWindow !== undefined)
+      updates.rateLimitTimeWindow = dto.rateLimitTimeWindow;
     if (dto.permissions !== undefined) updates.permissions = dto.permissions;
 
     const updated = await this.db.transaction(async (tx) => {
@@ -599,10 +616,7 @@ export class AdminService {
   }
 
   async getErrorLogs(query: AdminErrorLogsQueryDto): Promise<AdminLogPage> {
-    return this.queryLogs(
-      { ...query, statusCode: undefined },
-      true,
-    );
+    return this.queryLogs({ ...query, statusCode: undefined }, true);
   }
 
   private async queryLogs(
@@ -618,7 +632,16 @@ export class AdminService {
       conditions.push(gte(requestLog.statusCode, 400));
     }
     if (query.cursor) {
-      conditions.push(gt(requestLog.id, query.cursor));
+      const cursor = decodeRequestLogCursor(query.cursor);
+      conditions.push(
+        or(
+          lt(requestLog.createdAt, cursor.createdAt),
+          and(
+            eq(requestLog.createdAt, cursor.createdAt),
+            lt(requestLog.id, cursor.id),
+          ),
+        ),
+      );
     }
     if (query.userId) conditions.push(eq(requestLog.userId, query.userId));
     if (query.keyId) conditions.push(eq(requestLog.keyId, query.keyId));
@@ -626,8 +649,7 @@ export class AdminService {
       conditions.push(eq(requestLog.method, query.method.toUpperCase()));
     if (query.statusCode && !errorsOnly)
       conditions.push(eq(requestLog.statusCode, query.statusCode));
-    if (query.path)
-      conditions.push(ilike(requestLog.path, `%${query.path}%`));
+    if (query.path) conditions.push(ilike(requestLog.path, `%${query.path}%`));
     if (query.from)
       conditions.push(gte(requestLog.createdAt, new Date(query.from)));
     if (query.to)
@@ -640,22 +662,21 @@ export class AdminService {
       .select()
       .from(requestLog)
       .where(where)
-      .orderBy(requestLog.id)
+      .orderBy(desc(requestLog.createdAt), desc(requestLog.id))
       .limit(limit + 1);
 
     const hasMore = rows.length > limit;
     const data = hasMore ? rows.slice(0, limit) : rows;
-    const nextCursor = hasMore ? data[data.length - 1].id : undefined;
+    const last = data[data.length - 1];
+    const nextCursor =
+      hasMore && last
+        ? encodeRequestLogCursor({ createdAt: last.createdAt, id: last.id })
+        : undefined;
 
     // Total count (without cursor pagination for UI display)
-    const countConditions = conditions.filter(
-      (c) => !String(c).includes(requestLog.id.name),
-    );
-    // Simpler total: just count filtered (not cursor-filtered)
     const totalConditions: typeof conditions = [];
     if (errorsOnly) totalConditions.push(gte(requestLog.statusCode, 400));
-    if (query.userId)
-      totalConditions.push(eq(requestLog.userId, query.userId));
+    if (query.userId) totalConditions.push(eq(requestLog.userId, query.userId));
     if (query.keyId) totalConditions.push(eq(requestLog.keyId, query.keyId));
     if (query.method)
       totalConditions.push(eq(requestLog.method, query.method.toUpperCase()));
@@ -735,13 +756,15 @@ export class AdminService {
 
     const rows = await this.db
       .select({
-        bucket: sql<string>`date_trunc(${granularity}, ${requestLog.createdAt})`.as(
-          'bucket',
-        ),
+        bucket:
+          sql<string>`date_trunc(${granularity}, ${requestLog.createdAt})`.as(
+            'bucket',
+          ),
         cnt: count(),
-        errors: sql<number>`COUNT(*) FILTER (WHERE ${requestLog.statusCode} >= 400)`.as(
-          'errors',
-        ),
+        errors:
+          sql<number>`COUNT(*) FILTER (WHERE ${requestLog.statusCode} >= 400)`.as(
+            'errors',
+          ),
       })
       .from(requestLog)
       .where(
@@ -760,13 +783,21 @@ export class AdminService {
     }));
   }
 
-  async getEndpointStats(query: AdminStatsTopQueryDto): Promise<EndpointStat[]> {
+  async getEndpointStats(
+    query: AdminStatsTopQueryDto,
+  ): Promise<EndpointStat[]> {
     const limit = query.limit ?? 10;
     const conditions: ReturnType<typeof eq>[] = [];
     if (query.from)
-      conditions.push(gte(requestLog.createdAt, new Date(query.from)) as ReturnType<typeof eq>);
+      conditions.push(
+        gte(requestLog.createdAt, new Date(query.from)) as ReturnType<
+          typeof eq
+        >,
+      );
     if (query.to)
-      conditions.push(lte(requestLog.createdAt, new Date(query.to)) as ReturnType<typeof eq>);
+      conditions.push(
+        lte(requestLog.createdAt, new Date(query.to)) as ReturnType<typeof eq>,
+      );
 
     const rows = await this.db
       .select({ path: requestLog.path, cnt: count() })
@@ -783,9 +814,15 @@ export class AdminService {
     const limit = query.limit ?? 10;
     const conditions: ReturnType<typeof eq>[] = [];
     if (query.from)
-      conditions.push(gte(requestLog.createdAt, new Date(query.from)) as ReturnType<typeof eq>);
+      conditions.push(
+        gte(requestLog.createdAt, new Date(query.from)) as ReturnType<
+          typeof eq
+        >,
+      );
     if (query.to)
-      conditions.push(lte(requestLog.createdAt, new Date(query.to)) as ReturnType<typeof eq>);
+      conditions.push(
+        lte(requestLog.createdAt, new Date(query.to)) as ReturnType<typeof eq>,
+      );
 
     const rows = await this.db
       .select({
@@ -811,9 +848,15 @@ export class AdminService {
     const limit = query.limit ?? 10;
     const conditions: ReturnType<typeof eq>[] = [];
     if (query.from)
-      conditions.push(gte(requestLog.createdAt, new Date(query.from)) as ReturnType<typeof eq>);
+      conditions.push(
+        gte(requestLog.createdAt, new Date(query.from)) as ReturnType<
+          typeof eq
+        >,
+      );
     if (query.to)
-      conditions.push(lte(requestLog.createdAt, new Date(query.to)) as ReturnType<typeof eq>);
+      conditions.push(
+        lte(requestLog.createdAt, new Date(query.to)) as ReturnType<typeof eq>,
+      );
 
     const rows = await this.db
       .select({
@@ -1048,9 +1091,18 @@ export class AdminService {
       targetType: 'line',
       targetId: line,
       reason,
-      metadata: { severity, titleLength: title.length, bodyLength: body.length },
+      metadata: {
+        severity,
+        titleLength: title.length,
+        bodyLength: body.length,
+      },
     });
-    await this.lineHealthAlertsService.upsertActive(line, severity, title, body);
+    await this.lineHealthAlertsService.upsertActive(
+      line,
+      severity,
+      title,
+      body,
+    );
     await this.pushService.sendToLine(line, title, body, {
       type: 'admin_service_alert',
     });
@@ -1108,7 +1160,8 @@ export class AdminService {
     ]);
 
     const memoryUsage = process.memoryUsage();
-    const memoryUsageMb = Math.round((memoryUsage.heapUsed / 1024 / 1024) * 100) / 100;
+    const memoryUsageMb =
+      Math.round((memoryUsage.heapUsed / 1024 / 1024) * 100) / 100;
     const uptimeSeconds = Math.round(process.uptime());
 
     return {
@@ -1349,6 +1402,7 @@ export class AdminService {
   private mapLogEntry(row: typeof requestLog.$inferSelect): AdminLogEntry {
     return {
       id: row.id,
+      requestId: row.requestId ?? undefined,
       method: row.method,
       path: row.path,
       statusCode: row.statusCode,
@@ -1356,8 +1410,11 @@ export class AdminService {
       keyId: row.keyId ?? undefined,
       responseTimeMs: row.responseTimeMs,
       ipAddress: row.ipAddress ?? undefined,
+      ipNetwork: row.ipNetwork ?? undefined,
+      ipFingerprint: row.ipFingerprint ?? undefined,
       userAgent: row.userAgent ?? undefined,
       error: row.error ?? undefined,
+      errorCode: row.errorCode ?? undefined,
       createdAt: row.createdAt,
     };
   }

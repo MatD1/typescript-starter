@@ -76,7 +76,12 @@ describe('GtfsStaticService ingest resolveZipBuffer behaviour', () => {
         { provide: DRIZZLE, useValue: mockDb },
         {
           provide: CacheService,
-          useValue: { get: jest.fn(), set: jest.fn() },
+          useValue: {
+            get: jest.fn(),
+            set: jest.fn(),
+            getOrSet: jest.fn(async (_key: string, factory: () => Promise<unknown>) => factory()),
+            delByPrefix: jest.fn().mockResolvedValue(undefined),
+          },
         },
         { provide: TfnswHttpClient, useValue: tfnsw },
         { provide: S3Service, useValue: s3 },

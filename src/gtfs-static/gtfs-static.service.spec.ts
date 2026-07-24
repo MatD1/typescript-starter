@@ -9,7 +9,12 @@ import { S3Service } from '../storage/s3.service';
 describe('GtfsStaticService', () => {
   let service: GtfsStaticService;
   let mockDb: { select: jest.Mock; from: jest.Mock; where: jest.Mock };
-  let mockCache: { get: jest.Mock; set: jest.Mock };
+  let mockCache: {
+    get: jest.Mock;
+    set: jest.Mock;
+    getOrSet: jest.Mock;
+    delByPrefix: jest.Mock;
+  };
   let queryChain: {
     from: jest.Mock;
     where: jest.Mock;
@@ -33,6 +38,8 @@ describe('GtfsStaticService', () => {
     mockCache = {
       get: jest.fn().mockResolvedValue(null),
       set: jest.fn().mockResolvedValue(undefined),
+      getOrSet: jest.fn(async (_key: string, factory: () => Promise<unknown>) => factory()),
+      delByPrefix: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({

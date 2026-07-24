@@ -127,6 +127,13 @@
       "when": 1784813608794,
       "tag": "0017_massive_hitman",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1784894047678,
+      "tag": "0018_tense_captain_britain",
+      "breakpoints": true
     }
   ]
 }

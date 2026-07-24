@@ -16,6 +16,7 @@ import { GraphQLError, GraphQLFormattedError } from 'graphql';
 import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
 import type { Request, Response } from 'express';
 import { join } from 'path';
+import { LoggerModule } from 'nestjs-pino';
 
 const graphqlLogger = new Logger('GraphQL');
 
@@ -38,10 +39,12 @@ import { AuditModule } from './audit/audit.module';
 
 import { ApiKeyGuard } from './auth/guards/api-key.guard';
 import { GqlThrottlerGuard } from './common/guards/gql-throttler.guard';
-import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { RequestLogInterceptor } from './common/interceptors/request-log.interceptor';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 import { CacheControlInterceptor } from './common/interceptors/cache-control.interceptor';
+import { createLoggerParams } from './common/logging/logging.config';
+import { RequestLogRetentionService } from './common/logging/request-log-retention.service';
+import { sanitizeAuditText } from './audit/audit.redaction';
 
 const MAX_QUERY_COMPLEXITY = 1000;
 const MAX_QUERY_DEPTH = 8;
@@ -52,6 +55,7 @@ const MAX_QUERY_DEPTH = 8;
       isGlobal: true,
       load: [configuration],
     }),
+    LoggerModule.forRoot(createLoggerParams()),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],
@@ -93,7 +97,10 @@ const MAX_QUERY_DEPTH = 8;
         return formattedError;
       },
       persistedQueries: {},
-      context: ({ req, res }: { req: Request; res: Response }) => ({ req, res }),
+      context: ({ req, res }: { req: Request; res: Response }) => ({
+        req,
+        res,
+      }),
       plugins: [
         ApolloServerPluginLandingPageLocalDefault({ embed: true }),
         {
@@ -121,15 +128,25 @@ const MAX_QUERY_DEPTH = 8;
               async didEncounterErrors({ errors, operationName }) {
                 for (const err of errors) {
                   const code = err.extensions?.code;
-                  const label = `Operation: ${operationName ?? '<anonymous>'}`;
+                  const details = {
+                    operationName: operationName ?? '<anonymous>',
+                    code,
+                    errorMessage: sanitizeAuditText(err.message, 1000),
+                    statusCode: (
+                      err.extensions?.http as { status?: number } | undefined
+                    )?.status,
+                  };
                   if (
                     code === 'UNAUTHENTICATED' ||
                     code === 'FORBIDDEN' ||
                     code === 'BAD_USER_INPUT'
                   ) {
-                    graphqlLogger.warn(`${label} — ${code}: ${err.message}`);
+                    graphqlLogger.warn(details, 'GraphQL request rejected');
                   } else {
-                    graphqlLogger.error(label, err.message, err.stack);
+                    graphqlLogger.error(
+                      { ...details, err },
+                      'GraphQL request failed',
+                    );
                   }
                 }
               },
@@ -140,15 +157,18 @@ const MAX_QUERY_DEPTH = 8;
       validationRules: [
         (context) => {
           // Exempt introspection queries from depth limits
-          const isIntrospection = context.getDocument().definitions.some(
-            (def) =>
-              def.kind === 'OperationDefinition' &&
-              def.selectionSet.selections.some(
-                (sel) =>
-                  sel.kind === 'Field' &&
-                  (sel.name.value === '__schema' || sel.name.value === '__type'),
-              ),
-          );
+          const isIntrospection = context
+            .getDocument()
+            .definitions.some(
+              (def) =>
+                def.kind === 'OperationDefinition' &&
+                def.selectionSet.selections.some(
+                  (sel) =>
+                    sel.kind === 'Field' &&
+                    (sel.name.value === '__schema' ||
+                      sel.name.value === '__type'),
+                ),
+            );
 
           if (isIntrospection) return {};
 
@@ -191,6 +211,7 @@ const MAX_QUERY_DEPTH = 8;
     { provide: APP_INTERCEPTOR, useClass: RequestLogInterceptor },
     { provide: APP_INTERCEPTOR, useClass: CacheControlInterceptor },
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
+    RequestLogRetentionService,
   ],
 })
-export class AppModule { }
+export class AppModule {}
