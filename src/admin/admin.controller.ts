@@ -540,6 +540,26 @@ export class AdminController {
     return { resolved };
   }
 
+  @Post('notifications/link-device-code')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({
+    summary: "Generate a one-time code to link a device to the calling admin's account",
+    description:
+      "For admins whose portal login provider (e.g. GitHub) has no matching mobile sign-in " +
+      "option — enter this code in the app's device-link screen within 5 minutes to register " +
+      "that phone against this admin account, so 'Send Test Notification' can reach it. " +
+      'Single-use and expires automatically.',
+  })
+  async createDeviceLinkCode(
+    @Req() req: Request,
+    @RequestHeader('x-audit-reason') reason: string,
+  ) {
+    const user = (req as unknown as Record<string, unknown>)['user'] as
+      | { userId: string }
+      | undefined;
+    return this.adminService.createDeviceLinkCode(user?.userId ?? '', reason);
+  }
+
   // ─── Health ───────────────────────────────────────────────────────────────
 
   @Get('health')

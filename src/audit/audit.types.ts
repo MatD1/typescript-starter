@@ -146,6 +146,9 @@ export const AUDIT_ACTIONS = {
   ADMIN_NOTIFICATION_TEST: 'admin.notification.test',
   ADMIN_SERVICE_ALERT: 'admin.notification.service_alert',
   ADMIN_LINE_ALERT_RESOLVED: 'admin.notification.line_alert_resolved',
+  ADMIN_DEVICE_LINK_CODE_CREATED: 'admin.notification.device_link_code_created',
+  PUSH_DEVICE_LINKED: 'push.device.linked',
+  PUSH_DEVICE_LINK_FAILED: 'push.device.link_failed',
 } as const;
 
 export type AuditAction =
@@ -164,4 +167,5 @@ export const HIGH_RISK_REASON_ACTIONS = new Set<AuditAction>([
   AUDIT_ACTIONS.ADMIN_NOTIFICATION_TEST,
   AUDIT_ACTIONS.ADMIN_SERVICE_ALERT,
   AUDIT_ACTIONS.ADMIN_LINE_ALERT_RESOLVED,
+  AUDIT_ACTIONS.ADMIN_DEVICE_LINK_CODE_CREATED,
 ]);

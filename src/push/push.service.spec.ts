@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DRIZZLE } from '../database/database.module';
+import { CacheService } from '../cache/cache.service';
 import { PushService } from './push.service';
 
 const mockSendEachForMulticast = jest.fn();
@@ -18,6 +19,11 @@ describe('PushService', () => {
     select: jest.Mock;
     insert: jest.Mock;
     delete: jest.Mock;
+  };
+  let mockCache: {
+    get: jest.Mock;
+    set: jest.Mock;
+    consumeOnce: jest.Mock;
   };
 
   beforeEach(async () => {
@@ -38,8 +44,18 @@ describe('PushService', () => {
       }),
     };
 
+    mockCache = {
+      get: jest.fn().mockResolvedValue(null),
+      set: jest.fn().mockResolvedValue(undefined),
+      consumeOnce: jest.fn().mockResolvedValue(null),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
-      providers: [PushService, { provide: DRIZZLE, useValue: mockDb }],
+      providers: [
+        PushService,
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: CacheService, useValue: mockCache },
+      ],
     }).compile();
 
     service = module.get(PushService);
@@ -121,6 +137,51 @@ describe('PushService', () => {
 
       expect(result).toEqual({ sent: 0, pruned: 0 });
       expect(mockSendEachForMulticast).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('createDeviceLinkCode / redeemDeviceLinkCode', () => {
+    it('creates an 8-character code and stores it against the admin userId', async () => {
+      const result = await service.createDeviceLinkCode('admin-1');
+
+      expect(result.code).toHaveLength(8);
+      expect(result.expiresInSeconds).toBe(300);
+      expect(mockCache.set).toHaveBeenCalledWith(
+        `push:link-code:${result.code}`,
+        { userId: 'admin-1' },
+        300,
+      );
+    });
+
+    it('redeems a valid code by registering the device to the claimed userId', async () => {
+      mockCache.consumeOnce.mockResolvedValue({ userId: 'admin-1' });
+
+      const result = await service.redeemDeviceLinkCode('ABCD1234', 'token-xyz', 'android');
+
+      expect(result).toEqual({ userId: 'admin-1' });
+      expect(mockCache.consumeOnce).toHaveBeenCalledWith('push:link-code:ABCD1234');
+      expect(mockDb.insert).toHaveBeenCalled();
+      const valuesCall = mockDb.insert.mock.results[0].value.values as jest.Mock;
+      expect(valuesCall).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'admin-1', fcmToken: 'token-xyz', platform: 'android' }),
+      );
+    });
+
+    it('is case/whitespace-insensitive and normalizes before lookup', async () => {
+      mockCache.consumeOnce.mockResolvedValue({ userId: 'admin-1' });
+
+      await service.redeemDeviceLinkCode('  abcd1234  ', 'token-xyz');
+
+      expect(mockCache.consumeOnce).toHaveBeenCalledWith('push:link-code:ABCD1234');
+    });
+
+    it('rejects an invalid or already-used code', async () => {
+      mockCache.consumeOnce.mockResolvedValue(null);
+
+      await expect(
+        service.redeemDeviceLinkCode('BADCODE1', 'token-xyz'),
+      ).rejects.toThrow('Invalid or expired code');
+      expect(mockDb.insert).not.toHaveBeenCalled();
     });
   });
 });

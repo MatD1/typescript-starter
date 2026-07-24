@@ -31,6 +31,8 @@ export const AUDITED_MUTATION_INVENTORY: Readonly<Record<string, AuditAction>> =
     AUDIT_ACTIONS.ADMIN_SERVICE_ALERT,
   'admin/admin.controller.ts:POST:notifications/active-alerts/:line/resolve':
     AUDIT_ACTIONS.ADMIN_LINE_ALERT_RESOLVED,
+  'admin/admin.controller.ts:POST:notifications/link-device-code':
+    AUDIT_ACTIONS.ADMIN_DEVICE_LINK_CODE_CREATED,
   'audit/audit.controller.ts:POST:audit-events/exports':
     AUDIT_ACTIONS.AUDIT_EXPORT_REQUESTED,
   'audit/audit.controller.ts:POST:audit-archives/:id/verify':
@@ -50,6 +52,8 @@ export const AUDITED_MUTATION_INVENTORY: Readonly<Record<string, AuditAction>> =
     AUDIT_ACTIONS.HISTORY_PURGE_ATTEMPTED,
   'push/push.controller.ts:POST:devices':
     AUDIT_ACTIONS.PUSH_DEVICE_REGISTERED,
+  'push/push.controller.ts:POST:link-device':
+    AUDIT_ACTIONS.PUSH_DEVICE_LINKED,
   'admin/admin.resolver.ts:GRAPHQL:adminUpdateUser':
     AUDIT_ACTIONS.ADMIN_USER_ROLE_CHANGED,
   'admin/admin.resolver.ts:GRAPHQL:adminDeleteUser':

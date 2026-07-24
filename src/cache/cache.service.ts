@@ -38,6 +38,25 @@ export class CacheService implements OnModuleDestroy {
     await this.client.del(key);
   }
 
+  /**
+   * Atomically reads and deletes a key in one round trip — a value is
+   * returned at most once even under concurrent callers, so this is safe to
+   * use for single-use tokens/codes (e.g. a device-link pairing code).
+   */
+  async consumeOnce<T>(key: string): Promise<T | null> {
+    const value = (await this.client.eval(
+      "local v = redis.call('GET', KEYS[1]); if v then redis.call('DEL', KEYS[1]) end; return v",
+      1,
+      key,
+    )) as string | null;
+    if (!value) return null;
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return null;
+    }
+  }
+
   /** Delete all keys matching `${prefix}*`. Used to invalidate a whole cached section (e.g. after a GTFS ingest). */
   async delByPrefix(prefix: string): Promise<void> {
     let cursor = '0';

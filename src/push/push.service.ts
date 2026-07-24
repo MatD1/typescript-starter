@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Inject,
   Injectable,
   Logger,
@@ -12,12 +13,13 @@ import {
   type ServiceAccount,
 } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
-import { createHash, randomUUID } from 'crypto';
+import { createHash, randomInt, randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
 import { DRIZZLE, DrizzleDB } from '../database/database.module';
 import { deviceTokens } from '../database/schema/push.schema';
 import { AuditService } from '../audit/audit.service';
 import { AUDIT_ACTIONS } from '../audit/audit.types';
+import { CacheService } from '../cache/cache.service';
 
 /** FCM error codes that mean the token is dead and safe to delete. */
 const UNREGISTERED_FCM_ERROR_CODES = new Set([
@@ -46,6 +48,7 @@ export class PushService implements OnModuleInit {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: DrizzleDB,
+    private readonly cache: CacheService,
     @Optional() private readonly audit?: AuditService,
   ) {}
 
@@ -254,5 +257,72 @@ export class PushService implements OnModuleInit {
       },
     });
     return { sent: response.successCount, pruned: deadTokens.length };
+  }
+
+  private static readonly LINK_CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // no 0/O/1/I/L — avoids misreads when typed by hand
+  private static readonly LINK_CODE_LENGTH = 8;
+  private static readonly LINK_CODE_TTL_SECONDS = 300;
+  private static linkCodeKey(code: string): string {
+    return `push:link-code:${code}`;
+  }
+
+  /**
+   * Generates a short-lived, single-use pairing code so an admin whose
+   * portal login (e.g. GitHub) has no matching mobile sign-in provider can
+   * still register a personal device against their admin userId — enter
+   * the code once in the app and that device's FCM token is linked to this
+   * admin account, without requiring the two logins to share an identity.
+   */
+  async createDeviceLinkCode(
+    adminUserId: string,
+  ): Promise<{ code: string; expiresInSeconds: number }> {
+    const alphabet = PushService.LINK_CODE_ALPHABET;
+    let code = '';
+    for (let i = 0; i < PushService.LINK_CODE_LENGTH; i++) {
+      code += alphabet[randomInt(alphabet.length)];
+    }
+    await this.cache.set(
+      PushService.linkCodeKey(code),
+      { userId: adminUserId },
+      PushService.LINK_CODE_TTL_SECONDS,
+    );
+    return { code, expiresInSeconds: PushService.LINK_CODE_TTL_SECONDS };
+  }
+
+  /**
+   * Redeems a pairing code from `createDeviceLinkCode`, registering the
+   * caller's device against the code's target userId. Codes are consumed
+   * atomically (never usable twice) via `CacheService.consumeOnce`.
+   */
+  async redeemDeviceLinkCode(
+    code: string,
+    fcmToken: string,
+    platform?: string,
+  ): Promise<{ userId: string }> {
+    const normalized = code.trim().toUpperCase();
+    const claim = await this.cache.consumeOnce<{ userId: string }>(
+      PushService.linkCodeKey(normalized),
+    );
+    if (!claim) {
+      await this.audit?.recordBestEffort({
+        category: 'push',
+        action: AUDIT_ACTIONS.PUSH_DEVICE_LINK_FAILED,
+        outcome: 'failed',
+        severity: 'warning',
+        error: { code: 'INVALID_OR_EXPIRED_CODE', message: 'Device link code was invalid, expired, or already used' },
+      });
+      throw new BadRequestException('Invalid or expired code');
+    }
+
+    await this.registerDeviceToken(claim.userId, fcmToken, platform);
+    await this.audit?.recordBestEffort({
+      category: 'push',
+      action: AUDIT_ACTIONS.PUSH_DEVICE_LINKED,
+      outcome: 'succeeded',
+      targetType: 'user',
+      targetId: claim.userId,
+      metadata: { platform },
+    });
+    return { userId: claim.userId };
   }
 }

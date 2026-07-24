@@ -1,10 +1,25 @@
 import { Body, Controller, Post, Req } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import type { Request } from 'express';
 import { PushService } from './push.service';
 
 class RegisterDeviceDto {
+  @IsString()
+  @IsNotEmpty()
+  fcmToken!: string;
+
+  @IsOptional()
+  @IsIn(['ios', 'android'])
+  platform?: string;
+}
+
+class LinkDeviceDto {
+  @IsString()
+  @IsNotEmpty()
+  code!: string;
+
   @IsString()
   @IsNotEmpty()
   fcmToken!: string;
@@ -37,5 +52,24 @@ export class PushController {
       dto.platform,
     );
     return { success: true };
+  }
+
+  @Post('link-device')
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({
+    summary: "Redeem an admin's device-link pairing code",
+    description:
+      "Registers this device's FCM token against the userId that generated the pairing code " +
+      '(from POST /admin/notifications/link-device-code) — for admins whose portal login has no ' +
+      "matching mobile sign-in provider, so they can still test push delivery on their own phone. " +
+      'Codes are single-use and expire after 5 minutes.',
+  })
+  async linkDevice(@Body() dto: LinkDeviceDto) {
+    const { userId } = await this.pushService.redeemDeviceLinkCode(
+      dto.code,
+      dto.fcmToken,
+      dto.platform,
+    );
+    return { success: true, linkedTo: userId };
   }
 }

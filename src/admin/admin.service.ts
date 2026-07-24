@@ -1148,6 +1148,38 @@ export class AdminService {
     return resolved;
   }
 
+  /**
+   * One-time pairing code so an admin whose portal login provider has no
+   * matching mobile sign-in can still register their own phone for FCM
+   * testing (see PushService.createDeviceLinkCode/redeemDeviceLinkCode).
+   */
+  async createDeviceLinkCode(
+    adminUserId: string,
+    reason: string,
+  ): Promise<{ code: string; expiresInSeconds: number }> {
+    const attempt = await this.audit.recordAttempt({
+      category: 'notification',
+      action: AUDIT_ACTIONS.ADMIN_DEVICE_LINK_CODE_CREATED,
+      severity: 'high',
+      targetType: 'user',
+      targetId: adminUserId,
+      reason,
+    });
+    const result = await this.pushService.createDeviceLinkCode(adminUserId);
+    await this.audit.record({
+      category: 'notification',
+      action: AUDIT_ACTIONS.ADMIN_DEVICE_LINK_CODE_CREATED,
+      outcome: 'succeeded',
+      severity: 'high',
+      targetType: 'user',
+      targetId: adminUserId,
+      reason,
+      correlationId: attempt.id,
+      metadata: { expiresInSeconds: result.expiresInSeconds },
+    });
+    return result;
+  }
+
   // ─── Health ────────────────────────────────────────────────────────────────
 
   async getHealth(): Promise<SystemHealth> {
