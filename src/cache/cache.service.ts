@@ -7,6 +7,15 @@ import type { AuditEventInput } from '../audit/audit.types';
 export class CacheService implements OnModuleDestroy {
   private readonly logger = new Logger(CacheService.name);
   private readonly client: Redis;
+  /**
+   * In-process de-dupe for concurrent `getOrSet` calls on the same key while
+   * a fetch is already underway — without this, e.g. two callers racing to
+   * populate `disruptions:sydneytrains` on a cold cache (the mode fan-out's
+   * own `sydneytrains` entry and the `intercity` entry, which reuses
+   * sydneytrains data) both see a miss and both hit the upstream API, each
+   * consuming a slot in TfNSW's shared 4-req/sec rate limit for nothing.
+   */
+  private readonly inFlight = new Map<string, Promise<unknown>>();
 
   constructor(configService: ConfigService) {
     this.client = new Redis(configService.get<string>('redis.url'), {
@@ -112,9 +121,20 @@ export class CacheService implements OnModuleDestroy {
     const cached = await this.get<T>(key);
     if (cached !== null) return cached;
 
-    const fresh = await factory();
-    await this.set(key, fresh, ttlSeconds);
-    return fresh;
+    const existing = this.inFlight.get(key);
+    if (existing) return existing as Promise<T>;
+
+    const pending = (async () => {
+      try {
+        const fresh = await factory();
+        await this.set(key, fresh, ttlSeconds);
+        return fresh;
+      } finally {
+        this.inFlight.delete(key);
+      }
+    })();
+    this.inFlight.set(key, pending);
+    return pending;
   }
 
   /** SET key NX EX ttl — returns true when the lock was acquired. */
