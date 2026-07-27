@@ -24,6 +24,10 @@ export class LivePositionObject {
   @Field(() => Float, { nullable: true })
   speed?: number;
 
+  @ApiPropertyOptional({ description: 'Cumulative distance travelled by the vehicle, in metres' })
+  @Field(() => Float, { nullable: true, description: 'Cumulative distance travelled by the vehicle, in metres' })
+  odometer?: number;
+
   @ApiPropertyOptional({ description: 'INCOMING_AT | STOPPED_AT | IN_TRANSIT_TO' })
   @Field({ nullable: true, description: 'INCOMING_AT | STOPPED_AT | IN_TRANSIT_TO' })
   currentStatus?: string;
@@ -39,6 +43,10 @@ export class LivePositionObject {
   @ApiPropertyOptional()
   @Field({ nullable: true })
   occupancyStatus?: string;
+
+  @ApiPropertyOptional({ description: 'RUNNING_SMOOTHLY | STOP_AND_GO | CONGESTION | SEVERE_CONGESTION' })
+  @Field({ nullable: true, description: 'RUNNING_SMOOTHLY | STOP_AND_GO | CONGESTION | SEVERE_CONGESTION' })
+  congestionLevel?: string;
 
   @ApiPropertyOptional({ description: 'TfNSW track direction: UP | DOWN' })
   @Field({ nullable: true, description: 'TfNSW track direction: UP | DOWN' })
@@ -73,9 +81,17 @@ export class LiveStopTimeUpdateObject {
   @Field(() => Int, { nullable: true, description: 'Arrival delay in seconds (positive = late)' })
   arrivalDelay?: number;
 
+  @ApiPropertyOptional({ description: 'Prediction confidence in seconds for the arrival estimate — smaller means more confident' })
+  @Field(() => Int, { nullable: true, description: 'Prediction confidence in seconds for the arrival estimate — smaller means more confident' })
+  arrivalUncertainty?: number;
+
   @ApiPropertyOptional({ description: 'Departure delay in seconds' })
   @Field(() => Int, { nullable: true, description: 'Departure delay in seconds' })
   departureDelay?: number;
+
+  @ApiPropertyOptional({ description: 'Prediction confidence in seconds for the departure estimate' })
+  @Field(() => Int, { nullable: true, description: 'Prediction confidence in seconds for the departure estimate' })
+  departureUncertainty?: number;
 
   @ApiPropertyOptional({ description: 'Expected arrival time (epoch seconds)' })
   @Field(() => Int, {
@@ -183,6 +199,10 @@ export class TrackedTripObject {
 
   // ── Vehicle amenity info ─────────────────────────────────────────────────
 
+  @ApiPropertyOptional({ description: 'Plate of the physical vehicle (buses mainly; rarely populated for rail)' })
+  @Field({ nullable: true, description: 'Plate of the physical vehicle (buses mainly; rarely populated for rail)' })
+  licensePlate?: string;
+
   @ApiPropertyOptional()
   @Field({ nullable: true })
   vehicleModel?: string;
@@ -198,4 +218,8 @@ export class TrackedTripObject {
   @ApiPropertyOptional()
   @Field({ nullable: true })
   performingPriorTrip?: boolean;
+
+  @ApiPropertyOptional({ description: 'Bitmask of TfNSW special vehicle attributes' })
+  @Field(() => Int, { nullable: true, description: 'Bitmask of TfNSW special vehicle attributes' })
+  specialVehicleAttributes?: number;
 }

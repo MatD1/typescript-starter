@@ -83,6 +83,7 @@ const EXT_CONSIST = '.transit_realtime.consist';
 const EXT_TFNSW_VD = '.transit_realtime.tfnswVehicleDescriptor';
 const EXT_TRACK_DIR = '.transit_realtime.trackDirection';
 const EXT_CARRIAGE_OCC = '.transit_realtime.carriageSeqPredictiveOccupancy';
+const EXT_UPDATE_BUNDLE = '.transit_realtime.update';
 
 function normalizeEntity(e: Record<string, any>): NswFeedEntity {
   return {
@@ -91,7 +92,23 @@ function normalizeEntity(e: Record<string, any>): NswFeedEntity {
     vehicle: e['vehicle'] ? normalizeVehiclePosition(e['vehicle']) : undefined,
     tripUpdate: e['tripUpdate'] ? normalizeTripUpdate(e['tripUpdate']) : undefined,
     alert: e['alert'] as NswAlert | undefined,
-    update: e['update'] as NswUpdateBundle | undefined,
+    // protobufjs namespaces proto2 `extend` fields under their fully-qualified
+    // key (like the other four 1007 extensions above) — `e['update']` is
+    // always undefined; this was previously silently broken.
+    update: e[EXT_UPDATE_BUNDLE]
+      ? normalizeUpdateBundle(e[EXT_UPDATE_BUNDLE])
+      : undefined,
+  };
+}
+
+function normalizeUpdateBundle(u: Record<string, any>): NswUpdateBundle {
+  return {
+    // The proto declares this field as `GTFSStaticBundle` (no underscores),
+    // so protobufjs has no snake_case pattern to camelCase — it comes back
+    // with that exact literal casing, not `gtfsStaticBundle`.
+    gtfsStaticBundle: u['GTFSStaticBundle'],
+    updateSequence: u['updateSequence'],
+    cancelledTrip: u['cancelledTrip'] ?? [],
   };
 }
 
@@ -285,7 +302,7 @@ export interface NswEntitySelector {
   routeId?: string;
   routeType?: number;
   stopId?: string;
-  trip?: { tripId?: string; routeId?: string; directionId?: number };
+  trip?: NswTripDescriptor;
   directionId?: number;
 }
 

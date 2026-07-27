@@ -158,6 +158,28 @@ describe('GtfsRealtimeService', () => {
       const results = await service.getVehiclePositions('buses');
       expect(results).toHaveLength(0);
     });
+
+    it('maps VehicleDescriptor.licensePlate', async () => {
+      const buf = await buildVehiclePosFeed([
+        { id: 'e6', vehicleId: 'B1', latitude: -33.7, longitude: 151.2, licensePlate: 'ABC12D' },
+      ]);
+      mockTransportService.getGtfsRealtime.mockResolvedValue(buf);
+
+      const results = await service.getVehiclePositions('buses');
+      expect(results[0].licensePlate).toBe('ABC12D');
+    });
+
+    it('drops (rather than null-islands) a vehicle with no position at all', async () => {
+      const buf = await buildVehiclePosFeed([
+        { id: 'e7', vehicleId: 'NOPOS' },
+        { id: 'e8', vehicleId: 'HASPOS', latitude: -33.5, longitude: 151.0 },
+      ]);
+      mockTransportService.getGtfsRealtime.mockResolvedValue(buf);
+
+      const results = await service.getVehiclePositions('sydneytrains');
+      expect(results).toHaveLength(1);
+      expect(results[0].vehicleId).toBe('HASPOS');
+    });
   });
 
   // ─── getTripUpdates ─────────────────────────────────────────────────────────
@@ -244,6 +266,82 @@ describe('GtfsRealtimeService', () => {
       expect(stu.carriagePredictiveOccupancy![0].positionInConsist).toBe(1);
       expect(stu.carriagePredictiveOccupancy![0].occupancyStatus).toBe('EMPTY');
       expect(stu.carriagePredictiveOccupancy![1].occupancyStatus).toBe('MANY_SEATS_AVAILABLE');
+    });
+
+    it('logs (but does not throw on) a TfNSW UpdateBundle entity found alongside trip updates', async () => {
+      const buf = await buildTripUpdateFeed(
+        [{ id: 'tu5', tripId: 'TRIP-E' }],
+        [
+          {
+            id: 'bundle-1',
+            gtfsStaticBundle: 'sydneytrains',
+            updateSequence: 3,
+            cancelledTrip: ['TRIP-CANCELLED-1'],
+          },
+        ],
+      );
+      mockTransportService.getGtfsRealtime.mockResolvedValue(buf);
+      const warnSpy = jest.spyOn((service as any).logger, 'warn');
+
+      const results = await service.getTripUpdates('sydneytrains');
+
+      // The bundle-only entity has no tripUpdate, so it's correctly excluded
+      // from the trip-update results themselves...
+      expect(results).toHaveLength(1);
+      expect(results[0].tripId).toBe('TRIP-E');
+      // ...but its presence is still surfaced via a log, not silently dropped.
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('bundle=sydneytrains sequence=3 cancelledTrips=[TRIP-CANCELLED-1]'),
+      );
+    });
+
+    it('maps TripUpdate.vehicle licensePlate and TfNSW amenity extension', async () => {
+      const buf = await buildTripUpdateFeed([
+        {
+          id: 'tu6',
+          tripId: 'TRIP-F',
+          vehicleId: 'V6',
+          licensePlate: 'XYZ99A',
+          vehicleModel: 'B-Double',
+          airConditioned: true,
+          wheelchairAccessible: 1,
+          performingPriorTrip: true,
+        },
+      ]);
+      mockTransportService.getGtfsRealtime.mockResolvedValue(buf);
+
+      const results = await service.getTripUpdates('buses');
+      const tu = results[0];
+      expect(tu.licensePlate).toBe('XYZ99A');
+      expect(tu.vehicleModel).toBe('B-Double');
+      expect(tu.airConditioned).toBe(true);
+      expect(tu.wheelchairAccessible).toBe(1);
+      expect(tu.performingPriorTrip).toBe(true);
+    });
+
+    it('maps StopTimeEvent.uncertainty for arrival and departure', async () => {
+      const buf = await buildTripUpdateFeed([
+        {
+          id: 'tu7',
+          tripId: 'TRIP-G',
+          stopTimeUpdates: [
+            {
+              stopSequence: 1,
+              stopId: 'S1',
+              arrivalDelay: 60,
+              arrivalUncertainty: 30,
+              departureDelay: 90,
+              departureUncertainty: 45,
+            },
+          ],
+        },
+      ]);
+      mockTransportService.getGtfsRealtime.mockResolvedValue(buf);
+
+      const results = await service.getTripUpdates('sydneytrains');
+      const stu = results[0].stopTimeUpdates[0];
+      expect(stu.arrivalUncertainty).toBe(30);
+      expect(stu.departureUncertainty).toBe(45);
     });
   });
 
@@ -334,6 +432,48 @@ describe('GtfsRealtimeService', () => {
       expect(ie.routeId).toBe('T1');
       expect(ie.directionId).toBe(1);
       expect(ie.routeType).toBe(2);
+    });
+
+    it('maps the full trip descriptor on an informedEntity scoped to a specific trip occurrence', async () => {
+      const buf = await buildAlertFeed([
+        {
+          id: 'a6',
+          headerText: 'Service change',
+          informedEntities: [
+            {
+              routeId: 'T1',
+              tripId: 'TRIP-H',
+              tripStartDate: '20260726',
+              tripStartTime: '08:15:00',
+              tripScheduleRelationship: 'CANCELED',
+            },
+          ],
+        },
+      ]);
+      mockTransportService.getGtfsRealtime.mockResolvedValue(buf);
+
+      const results = await service.getAlerts('sydneytrains');
+      const ie = results[0].informedEntities[0];
+      expect(ie.tripId).toBe('TRIP-H');
+      expect(ie.tripStartDate).toBe('20260726');
+      expect(ie.tripStartTime).toBe('08:15:00');
+      expect(ie.tripScheduleRelationship).toBe('CANCELED');
+    });
+
+    it('prefers an English translation over just taking the first one', async () => {
+      const buf = await buildAlertFeed([
+        {
+          id: 'a7',
+          headerTextTranslations: [
+            { text: 'Perturbation du service', language: 'fr' },
+            { text: 'Service disruption', language: 'en' },
+          ],
+        },
+      ]);
+      mockTransportService.getGtfsRealtime.mockResolvedValue(buf);
+
+      const results = await service.getAlerts('sydneytrains');
+      expect(results[0].headerText).toBe('Service disruption');
     });
   });
 });

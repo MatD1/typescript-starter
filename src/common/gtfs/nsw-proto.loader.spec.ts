@@ -1,5 +1,9 @@
 import { decodeFeedMessage } from './nsw-proto.loader';
-import { buildVehiclePosFeed, buildAlertFeed } from '../../../test/helpers/test-protobuf-builder';
+import {
+  buildVehiclePosFeed,
+  buildAlertFeed,
+  buildUpdateBundleFeed,
+} from '../../../test/helpers/test-protobuf-builder';
 
 describe('NswProtoLoader', () => {
   describe('decodeFeedMessage', () => {
@@ -123,6 +127,24 @@ describe('NswProtoLoader', () => {
       expect((alert.ttsDescriptionText as any)?.translation?.[0]?.text).toBe(
         'Trains are currently delayed due to a signal fault',
       );
+    });
+
+    it('decodes TfNSW extension: FeedEntity.update (UpdateBundle, field 1007)', async () => {
+      const buffer = await buildUpdateBundleFeed({
+        id: 'bundle-1',
+        gtfsStaticBundle: 'sydneytrains',
+        updateSequence: 7,
+        cancelledTrip: ['trip-a', 'trip-b'],
+      });
+      const feed = await decodeFeedMessage(buffer);
+      const entity = feed.entity[0];
+      // This extension is namespaced by protobufjs exactly like the other
+      // four 1007 extensions — regression test for a bug where it was read
+      // as a plain (always-undefined) key.
+      expect(entity.update).toBeDefined();
+      expect(entity.update!.gtfsStaticBundle).toBe('sydneytrains');
+      expect(entity.update!.updateSequence).toBe(7);
+      expect(entity.update!.cancelledTrip).toEqual(['trip-a', 'trip-b']);
     });
   });
 });

@@ -29,6 +29,15 @@ export class InformedEntityObject {
   @Field({ nullable: true })
   tripId?: string;
 
+  @Field({ nullable: true, description: 'Set only when the alert scopes to a specific trip occurrence rather than the route/stop generally' })
+  tripStartDate?: string;
+
+  @Field({ nullable: true })
+  tripStartTime?: string;
+
+  @Field({ nullable: true, description: "e.g. CANCELED — this trip occurrence's own schedule relationship" })
+  tripScheduleRelationship?: string;
+
   @Field(() => Int, { nullable: true })
   directionId?: number;
 }

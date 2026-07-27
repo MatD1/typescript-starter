@@ -22,7 +22,7 @@ export const gtfsStop = pgTable(
     wheelchairBoarding: integer('wheelchair_boarding'),
     platformCode: text('platform_code'),
     mode: text('mode'),
-    feedKey: text('feed_key'),
+    feedKey: text('feed_key').notNull(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (t) => [
@@ -42,7 +42,7 @@ export const gtfsRoute = pgTable(
     routeColor: text('route_color'),
     routeTextColor: text('route_text_color'),
     mode: text('mode'),
-    feedKey: text('feed_key'),
+    feedKey: text('feed_key').notNull(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (t) => [index('gtfs_routes_feed_key_idx').on(t.feedKey)],
@@ -60,7 +60,7 @@ export const gtfsTrip = pgTable(
     shapeId: text('shape_id'),
     wheelchairAccessible: integer('wheelchair_accessible'),
     mode: text('mode'),
-    feedKey: text('feed_key'),
+    feedKey: text('feed_key').notNull(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (t) => [
@@ -83,7 +83,7 @@ export const gtfsCalendar = pgTable(
     startDate: text('start_date').notNull(),
     endDate: text('end_date').notNull(),
     mode: text('mode'),
-    feedKey: text('feed_key'),
+    feedKey: text('feed_key').notNull(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },
   (t) => [index('gtfs_calendar_feed_key_idx').on(t.feedKey)],
@@ -97,7 +97,7 @@ export const gtfsCalendarDate = pgTable(
     date: text('date').notNull(),
     exceptionType: integer('exception_type').notNull(),
     mode: text('mode'),
-    feedKey: text('feed_key'),
+    feedKey: text('feed_key').notNull(),
   },
   (t) => [index('gtfs_calendar_dates_feed_key_idx').on(t.feedKey)],
 );
@@ -114,7 +114,7 @@ export const gtfsStopTime = pgTable(
     pickupType: integer('pickup_type'),
     dropOffType: integer('drop_off_type'),
     mode: text('mode'),
-    feedKey: text('feed_key'),
+    feedKey: text('feed_key').notNull(),
   },
   (t) => [
     index('gtfs_stop_times_trip_idx').on(t.tripId),
@@ -129,7 +129,7 @@ export const gtfsStopRoute = pgTable(
     stopId: text('stop_id').notNull(),
     routeId: text('route_id').notNull(),
     mode: text('mode'),
-    feedKey: text('feed_key'),
+    feedKey: text('feed_key').notNull(),
   },
   (t) => [
     primaryKey({ columns: [t.stopId, t.routeId] }),

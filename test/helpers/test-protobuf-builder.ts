@@ -27,8 +27,9 @@ async function getRoot(): Promise<protobuf.Root> {
 
 export interface VehiclePositionInput {
   id: string;
-  latitude: number;
-  longitude: number;
+  /** Omit both latitude and longitude (leave undefined) to build a VehiclePosition with no `position` at all — a legal, if unusual, feed state. */
+  latitude?: number;
+  longitude?: number;
   bearing?: number;
   speed?: number;
   odometer?: number;
@@ -44,6 +45,7 @@ export interface VehiclePositionInput {
   directionId?: number;
   vehicleId?: string;
   vehicleLabel?: string;
+  licensePlate?: string;
   vehicleModel?: string;
   airConditioned?: boolean;
   wheelchairAccessible?: number;
@@ -65,13 +67,20 @@ export interface TripUpdateInput {
   routeId?: string;
   vehicleId?: string;
   vehicleLabel?: string;
+  licensePlate?: string;
+  vehicleModel?: string;
+  airConditioned?: boolean;
+  wheelchairAccessible?: number;
+  performingPriorTrip?: boolean;
   delay?: number;
   timestamp?: number;
   stopTimeUpdates?: Array<{
     stopSequence?: number;
     stopId?: string;
     arrivalDelay?: number;
+    arrivalUncertainty?: number;
     departureDelay?: number;
+    departureUncertainty?: number;
     scheduleRelationship?: string;
     departureOccupancyStatus?: string;
     carriagePredictiveOccupancy?: Array<{
@@ -92,6 +101,8 @@ export interface AlertInput {
   effect?: string;
   severityLevel?: string;
   url?: string;
+  /** Overrides `headerText` with an explicit multi-translation list, for testing language selection. */
+  headerTextTranslations?: Array<{ text: string; language?: string }>;
   activePeriods?: Array<{ start?: number; end?: number }>;
   informedEntities?: Array<{
     agencyId?: string;
@@ -99,12 +110,29 @@ export interface AlertInput {
     routeType?: number;
     stopId?: string;
     directionId?: number;
+    tripId?: string;
+    tripStartDate?: string;
+    tripStartTime?: string;
+    tripScheduleRelationship?: string;
   }>;
 }
 
-function translatedString(root: protobuf.Root, text: string) {
+/** language omitted means "English" per TfNSW convention (mirrors the app's own `firstTranslation` preference). */
+function translatedString(
+  root: protobuf.Root,
+  text: string,
+  language?: string,
+) {
   const TranslatedString = root.lookupType('transit_realtime.TranslatedString');
-  return TranslatedString.create({ translation: [{ text }] });
+  return TranslatedString.create({ translation: [{ text, language }] });
+}
+
+function translatedStringMultiLang(
+  root: protobuf.Root,
+  entries: Array<{ text: string; language?: string }>,
+) {
+  const TranslatedString = root.lookupType('transit_realtime.TranslatedString');
+  return TranslatedString.create({ translation: entries });
 }
 
 /**
@@ -142,6 +170,7 @@ export async function buildVehiclePosFeed(
     // VehicleDescriptor — extension tfnswVehicleDescriptor uses namespaced key
     const vehicleDescriptor: Record<string, unknown> = { id: v.vehicleId ?? v.id };
     if (v.vehicleLabel != null) vehicleDescriptor['label'] = v.vehicleLabel;
+    if (v.licensePlate != null) vehicleDescriptor['licensePlate'] = v.licensePlate;
     if (
       v.vehicleModel != null ||
       v.airConditioned != null ||
@@ -157,20 +186,23 @@ export async function buildVehiclePosFeed(
         });
     }
 
-    // Position — extension trackDirection uses namespaced key + numeric enum
-    const position: Record<string, unknown> = {
-      latitude: v.latitude,
-      longitude: v.longitude,
-    };
-    if (v.bearing != null) position['bearing'] = v.bearing;
-    if (v.speed != null) position['speed'] = v.speed;
-    if (v.odometer != null) position['odometer'] = v.odometer;
-    if (v.trackDirection != null) {
-      position['.transit_realtime.trackDirection'] = enumVal(
-        root,
-        'transit_realtime.TrackDirection',
-        v.trackDirection,
-      );
+    // Position — omitted entirely when both lat/lng are undefined, to model
+    // a VehiclePosition with no position at all (legal per the GTFS-RT spec).
+    const hasPosition = v.latitude != null && v.longitude != null;
+    const position: Record<string, unknown> | undefined = hasPosition
+      ? { latitude: v.latitude, longitude: v.longitude }
+      : undefined;
+    if (position) {
+      if (v.bearing != null) position['bearing'] = v.bearing;
+      if (v.speed != null) position['speed'] = v.speed;
+      if (v.odometer != null) position['odometer'] = v.odometer;
+      if (v.trackDirection != null) {
+        position['.transit_realtime.trackDirection'] = enumVal(
+          root,
+          'transit_realtime.TrackDirection',
+          v.trackDirection,
+        );
+      }
     }
 
     // Consist — extension on VehiclePosition uses namespaced key; enum fields use numeric values
@@ -227,19 +259,47 @@ export async function buildVehiclePosFeed(
   return Buffer.from(FeedMessage.encode(msg).finish());
 }
 
-/** Build a FeedMessage buffer containing trip updates (with NSW extensions) */
+/** Build a FeedMessage buffer containing trip updates (with NSW extensions), optionally alongside bare UpdateBundle-only entities. */
 export async function buildTripUpdateFeed(
   updates: TripUpdateInput[],
+  updateBundles: Array<{
+    id: string;
+    gtfsStaticBundle: string;
+    updateSequence: number;
+    cancelledTrip?: string[];
+  }> = [],
 ): Promise<Buffer> {
   const root = await getRoot();
   const FeedMessage = root.lookupType('transit_realtime.FeedMessage');
   const CarriageDescriptor = root.lookupType('transit_realtime.CarriageDescriptor');
+  const UpdateBundle = root.lookupType('transit_realtime.UpdateBundle');
+  const TfnswVehicleDescriptor = root.lookupType('transit_realtime.TfnswVehicleDescriptor');
 
-  const entities = updates.map((u) => ({
+  const entities = updates.map((u) => {
+    const vehicleDescriptor: Record<string, unknown> | undefined =
+      u.vehicleId != null
+        ? { id: u.vehicleId, label: u.vehicleLabel, licensePlate: u.licensePlate }
+        : undefined;
+    if (
+      vehicleDescriptor &&
+      (u.vehicleModel != null ||
+        u.airConditioned != null ||
+        u.wheelchairAccessible != null ||
+        u.performingPriorTrip != null)
+    ) {
+      vehicleDescriptor['.transit_realtime.tfnswVehicleDescriptor'] =
+        TfnswVehicleDescriptor.create({
+          vehicleModel: u.vehicleModel,
+          airConditioned: u.airConditioned,
+          wheelchairAccessible: u.wheelchairAccessible,
+          performingPriorTrip: u.performingPriorTrip,
+        });
+    }
+    return {
     id: u.id,
     tripUpdate: {
       trip: { tripId: u.tripId, routeId: u.routeId },
-      vehicle: u.vehicleId != null ? { id: u.vehicleId, label: u.vehicleLabel } : undefined,
+      vehicle: vehicleDescriptor,
       delay: u.delay,
       timestamp: u.timestamp,
       stopTimeUpdate: (u.stopTimeUpdates ?? []).map((stu) => {
@@ -253,8 +313,14 @@ export async function buildTripUpdateFeed(
         return {
           stopSequence: stu.stopSequence,
           stopId: stu.stopId,
-          arrival: stu.arrivalDelay != null ? { delay: stu.arrivalDelay } : undefined,
-          departure: stu.departureDelay != null ? { delay: stu.departureDelay } : undefined,
+          arrival:
+            stu.arrivalDelay != null || stu.arrivalUncertainty != null
+              ? { delay: stu.arrivalDelay, uncertainty: stu.arrivalUncertainty }
+              : undefined,
+          departure:
+            stu.departureDelay != null || stu.departureUncertainty != null
+              ? { delay: stu.departureDelay, uncertainty: stu.departureUncertainty }
+              : undefined,
           scheduleRelationship: stu.scheduleRelationship,
           departureOccupancyStatus: enumVal(
             root,
@@ -266,11 +332,49 @@ export async function buildTripUpdateFeed(
         };
       }),
     },
+  };});
+
+  const bundleEntities = updateBundles.map((b) => ({
+    id: b.id,
+    '.transit_realtime.update': UpdateBundle.create({
+      GTFSStaticBundle: b.gtfsStaticBundle,
+      updateSequence: b.updateSequence,
+      cancelledTrip: b.cancelledTrip ?? [],
+    }),
   }));
 
   const msg = FeedMessage.create({
     header: { gtfsRealtimeVersion: '2.0', timestamp: Date.now() },
-    entity: entities,
+    entity: [...entities, ...bundleEntities],
+  });
+  return Buffer.from(FeedMessage.encode(msg).finish());
+}
+
+/** Build a FeedMessage buffer containing a single bare FeedEntity carrying only the TfNSW UpdateBundle extension (field 1007) — no vehicle/tripUpdate/alert payload. */
+export async function buildUpdateBundleFeed(bundle: {
+  id: string;
+  gtfsStaticBundle: string;
+  updateSequence: number;
+  cancelledTrip?: string[];
+}): Promise<Buffer> {
+  const root = await getRoot();
+  const FeedMessage = root.lookupType('transit_realtime.FeedMessage');
+  const UpdateBundle = root.lookupType('transit_realtime.UpdateBundle');
+
+  const msg = FeedMessage.create({
+    header: { gtfsRealtimeVersion: '2.0', timestamp: Date.now() },
+    entity: [
+      {
+        id: bundle.id,
+        '.transit_realtime.update': UpdateBundle.create({
+          // Proto field is literally `GTFSStaticBundle` (no underscores) —
+          // protobufjs leaves it uncamelCased.
+          GTFSStaticBundle: bundle.gtfsStaticBundle,
+          updateSequence: bundle.updateSequence,
+          cancelledTrip: bundle.cancelledTrip ?? [],
+        }),
+      },
+    ],
   });
   return Buffer.from(FeedMessage.encode(msg).finish());
 }
@@ -287,7 +391,11 @@ export async function buildAlertFeed(alerts: AlertInput[]): Promise<Buffer> {
       cause: enumVal(root, 'transit_realtime.Alert.Cause', a.cause),
       effect: enumVal(root, 'transit_realtime.Alert.Effect', a.effect),
       severityLevel: enumVal(root, 'transit_realtime.Alert.SeverityLevel', a.severityLevel),
-      headerText: a.headerText ? translatedString(root, a.headerText) : undefined,
+      headerText: a.headerTextTranslations
+        ? translatedStringMultiLang(root, a.headerTextTranslations)
+        : a.headerText
+          ? translatedString(root, a.headerText)
+          : undefined,
       descriptionText: a.descriptionText ? translatedString(root, a.descriptionText) : undefined,
       ttsHeaderText: a.ttsHeaderText ? translatedString(root, a.ttsHeaderText) : undefined,
       ttsDescriptionText: a.ttsDescriptionText
@@ -301,6 +409,19 @@ export async function buildAlertFeed(alerts: AlertInput[]): Promise<Buffer> {
         routeType: ie.routeType,
         stopId: ie.stopId,
         directionId: ie.directionId,
+        trip:
+          ie.tripId != null
+            ? {
+                tripId: ie.tripId,
+                startDate: ie.tripStartDate,
+                startTime: ie.tripStartTime,
+                scheduleRelationship: enumVal(
+                  root,
+                  'transit_realtime.TripDescriptor.ScheduleRelationship',
+                  ie.tripScheduleRelationship,
+                ),
+              }
+            : undefined,
       })),
     },
   }));

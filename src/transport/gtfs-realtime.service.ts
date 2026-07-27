@@ -32,12 +32,16 @@ export class GtfsRealtimeService {
       'vehiclepos',
       mode,
     );
-    const feed = await this.parseFeed(buffer);
+    const feed = await this.parseFeed(buffer, `vehiclepos:${mode}`);
     return feed.entity
-      .filter((e) => e.vehicle != null)
+      // `position` is optional per the GTFS-RT spec — a vehicle entity
+      // without one used to fall back to (0,0), a real coordinate off the
+      // coast of west Africa, rather than being recognised as positionless.
+      // Dropping it entirely is safer than emitting fake "null island" data.
+      .filter((e) => e.vehicle != null && e.vehicle.position != null)
       .map((e) => {
         const v = e.vehicle as NswVehiclePosition;
-        const pos = v.position;
+        const pos = v.position!;
         const vd = v.vehicle;
         return {
           vehicleId: vd?.id ?? e.id,
@@ -47,19 +51,20 @@ export class GtfsRealtimeService {
           startDate: v.trip?.startDate,
           startTime: v.trip?.startTime,
           tripScheduleRelationship: v.trip?.scheduleRelationship,
-          latitude: pos?.latitude ?? 0,
-          longitude: pos?.longitude ?? 0,
-          bearing: pos?.bearing,
-          odometer: pos?.odometer,
-          speed: pos?.speed,
+          latitude: pos.latitude,
+          longitude: pos.longitude,
+          bearing: pos.bearing,
+          odometer: pos.odometer,
+          speed: pos.speed,
           currentStopSequence: v.currentStopSequence,
           currentStopId: v.stopId,
           currentStatus: v.currentStatus,
           timestamp: v.timestamp,
           congestionLevel: v.congestionLevel,
           occupancyStatus: v.occupancyStatus,
-          trackDirection: pos?.trackDirection,
+          trackDirection: pos.trackDirection,
           vehicleLabel: vd?.label,
+          licensePlate: vd?.licensePlate,
           vehicleModel: vd?.tfnswVehicleDescriptor?.vehicleModel,
           airConditioned: vd?.tfnswVehicleDescriptor?.airConditioned,
           wheelchairAccessible:
@@ -80,7 +85,7 @@ export class GtfsRealtimeService {
       'tripupdates',
       mode,
     );
-    const feed = await this.parseFeed(buffer);
+    const feed = await this.parseFeed(buffer, `tripupdates:${mode}`);
     return feed.entity
       .filter((e) => e.tripUpdate != null)
       .map((e) => {
@@ -90,6 +95,15 @@ export class GtfsRealtimeService {
           routeId: tu.trip.routeId,
           vehicleId: tu.vehicle?.id,
           vehicleLabel: tu.vehicle?.label,
+          licensePlate: tu.vehicle?.licensePlate,
+          vehicleModel: tu.vehicle?.tfnswVehicleDescriptor?.vehicleModel,
+          airConditioned: tu.vehicle?.tfnswVehicleDescriptor?.airConditioned,
+          wheelchairAccessible:
+            tu.vehicle?.tfnswVehicleDescriptor?.wheelchairAccessible,
+          performingPriorTrip:
+            tu.vehicle?.tfnswVehicleDescriptor?.performingPriorTrip,
+          specialVehicleAttributes:
+            tu.vehicle?.tfnswVehicleDescriptor?.specialVehicleAttributes,
           directionId: tu.trip.directionId,
           startDate: tu.trip.startDate,
           startTime: tu.trip.startTime,
@@ -101,8 +115,10 @@ export class GtfsRealtimeService {
             stopId: stu.stopId,
             arrivalDelay: stu.arrival?.delay,
             arrivalTime: stu.arrival?.time,
+            arrivalUncertainty: stu.arrival?.uncertainty,
             departureDelay: stu.departure?.delay,
             departureTime: stu.departure?.time,
+            departureUncertainty: stu.departure?.uncertainty,
             scheduleRelationship: stu.scheduleRelationship,
             departureOccupancyStatus: stu.departureOccupancyStatus,
             carriagePredictiveOccupancy: (
@@ -117,7 +133,7 @@ export class GtfsRealtimeService {
     mode: TransportMode,
   ): Promise<import('./nsw-gtfs-rt.types').ServiceAlert[]> {
     const buffer = await this.transportService.getGtfsRealtime('alerts', mode);
-    const feed = await this.parseFeed(buffer);
+    const feed = await this.parseFeed(buffer, `alerts:${mode}`);
     return feed.entity
       .filter((e) => e.alert != null)
       .map((e) => {
@@ -142,6 +158,12 @@ export class GtfsRealtimeService {
             routeType: ie.routeType,
             stopId: ie.stopId,
             tripId: ie.trip?.tripId,
+            // Only set when the alert scopes to a specific trip occurrence
+            // (e.g. "this alert applies to the CANCELED instance of trip X")
+            // rather than the route/stop generally.
+            tripStartDate: ie.trip?.startDate,
+            tripStartTime: ie.trip?.startTime,
+            tripScheduleRelationship: ie.trip?.scheduleRelationship,
             directionId: ie.directionId,
           })),
         };
@@ -157,12 +179,41 @@ export class GtfsRealtimeService {
     );
   }
 
-  private async parseFeed(buffer: Buffer) {
+  private async parseFeed(buffer: Buffer, context?: string) {
     try {
-      return await decodeFeedMessage(buffer);
+      const feed = await decodeFeedMessage(buffer);
+      this.logUpdateBundles(feed, context);
+      return feed;
     } catch (err) {
       this.logger.error(`Failed to decode GTFS-RT protobuf: ${String(err)}`);
       throw err;
+    }
+  }
+
+  /**
+   * TfNSW's `UpdateBundle` extension (field 1007 on FeedEntity) announces a
+   * static-schedule bundle change alongside a list of trip IDs it cancels —
+   * a real-time cancellation signal distinct from a trip_update's own
+   * schedule_relationship. It was previously undecodable due to a proto
+   * key-normalization bug; now that it decodes correctly we don't yet know
+   * how often (if ever) TfNSW actually populates it for our modes, so this
+   * logs every occurrence at warn level rather than silently wiring it into
+   * cancellation counting — once we've observed real payloads in production,
+   * the cancelled trip IDs can be fed into the same dedup-based counting
+   * `history-aggregate.util.ts` already uses for trip_update-sourced
+   * cancellations.
+   */
+  private logUpdateBundles(
+    feed: Awaited<ReturnType<typeof decodeFeedMessage>>,
+    context?: string,
+  ): void {
+    for (const entity of feed.entity) {
+      if (!entity.update) continue;
+      this.logger.warn(
+        `GTFS-RT UpdateBundle received${context ? ` (${context})` : ''}: ` +
+          `bundle=${entity.update.gtfsStaticBundle} sequence=${entity.update.updateSequence} ` +
+          `cancelledTrips=[${entity.update.cancelledTrip.join(',')}]`,
+      );
     }
   }
 
@@ -180,12 +231,22 @@ export class GtfsRealtimeService {
     };
   }
 
-  /** Extract the first translation text from a TranslatedString-shaped object */
-  private firstTranslation(
-    field: unknown,
-  ): string | undefined {
+  /**
+   * Extract text from a TranslatedString-shaped object, preferring an
+   * English (or language-unset, which TfNSW uses to mean English) entry
+   * over just blindly taking whichever translation TfNSW put first — only
+   * matters if TfNSW ever sends multiple languages, but costs nothing to
+   * get right now.
+   */
+  private firstTranslation(field: unknown): string | undefined {
     if (field == null) return undefined;
-    const ts = field as { translation?: Array<{ text?: string }> };
-    return ts.translation?.[0]?.text ?? undefined;
+    const ts = field as {
+      translation?: Array<{ text?: string; language?: string }>;
+    };
+    const translations = ts.translation ?? [];
+    const english = translations.find(
+      (t) => t.language == null || t.language.toLowerCase().startsWith('en'),
+    );
+    return (english ?? translations[0])?.text ?? undefined;
   }
 }

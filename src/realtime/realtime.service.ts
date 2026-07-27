@@ -23,7 +23,9 @@ type LiveStopTimeUpdate = {
   stopSequence?: number;
   stopId?: string;
   arrivalDelay?: number;
+  arrivalUncertainty?: number;
   departureDelay?: number;
+  departureUncertainty?: number;
   arrivalTime?: number;
   departureTime?: number;
   scheduleRelationship?: string;
@@ -395,7 +397,9 @@ export class RealtimeService {
           stopSequence: s.stopSequence,
           stopId: s.stopId,
           arrivalDelay: s.arrivalDelay,
+          arrivalUncertainty: s.arrivalUncertainty,
           departureDelay: s.departureDelay,
+          departureUncertainty: s.departureUncertainty,
           arrivalTime: s.arrivalTime,
           departureTime: s.departureTime,
           scheduleRelationship: s.scheduleRelationship,
@@ -421,10 +425,12 @@ export class RealtimeService {
               longitude: vehicle.longitude,
               bearing: vehicle.bearing,
               speed: vehicle.speed,
+              odometer: vehicle.odometer,
               currentStatus: vehicle.currentStatus,
               currentStopId: vehicle.currentStopId,
               currentStopSequence: vehicle.currentStopSequence,
               occupancyStatus: vehicle.occupancyStatus,
+              congestionLevel: vehicle.congestionLevel,
               trackDirection: vehicle.trackDirection,
               timestamp: vehicle.timestamp,
               consist: vehicle.consist,
@@ -440,10 +446,16 @@ export class RealtimeService {
           : liveStopTimeUpdates,
 
         // Vehicle amenity info
-        vehicleModel: vehicle?.vehicleModel,
-        airConditioned: vehicle?.airConditioned,
-        wheelchairAccessible: vehicle?.wheelchairAccessible,
-        performingPriorTrip: vehicle?.performingPriorTrip,
+        licensePlate: vehicle?.licensePlate ?? tripUpdate?.licensePlate,
+        vehicleModel: vehicle?.vehicleModel ?? tripUpdate?.vehicleModel,
+        airConditioned: vehicle?.airConditioned ?? tripUpdate?.airConditioned,
+        wheelchairAccessible:
+          vehicle?.wheelchairAccessible ?? tripUpdate?.wheelchairAccessible,
+        performingPriorTrip:
+          vehicle?.performingPriorTrip ?? tripUpdate?.performingPriorTrip,
+        specialVehicleAttributes:
+          vehicle?.specialVehicleAttributes ??
+          tripUpdate?.specialVehicleAttributes,
       };
 
       await this.cache.set(cacheKey, result, CacheTTL.VEHICLE_POSITIONS);

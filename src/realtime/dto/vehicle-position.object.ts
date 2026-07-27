@@ -100,6 +100,10 @@ export class VehiclePositionObject {
   @Field({ nullable: true, description: 'Vehicle label / set number' })
   vehicleLabel?: string;
 
+  @ApiPropertyOptional({ description: 'Plate of the physical vehicle (buses mainly; rarely populated for rail)' })
+  @Field({ nullable: true, description: 'Plate of the physical vehicle (buses mainly; rarely populated for rail)' })
+  licensePlate?: string;
+
   @ApiPropertyOptional()
   @Field({ nullable: true })
   vehicleModel?: string;
