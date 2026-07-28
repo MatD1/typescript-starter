@@ -37,8 +37,15 @@ export type DrizzleDB = NodePgDatabase<AppSchema>;
           // many devices paging through the full stops catalog at once) and
           // causes connection-acquisition timeouts under the misleading
           // "Failed query" label from GlobalExceptionFilter.
-          max: 10,
-          idleTimeoutMillis: 30000,
+          //
+          // Dropped back down from 10 (each idle Postgres backend has a real
+          // baseline memory cost) now that GTFS static reads are cached in
+          // Redis/Valkey and the stop_times cleanup removed the query
+          // pressure that originally required a bigger pool. Idle timeout
+          // shortened too, so connections don't sit around unused for long
+          // between this single-user app's bursts of activity.
+          max: 4,
+          idleTimeoutMillis: 10000,
           connectionTimeoutMillis: 5000,
         });
         return drizzle(pool, { schema });

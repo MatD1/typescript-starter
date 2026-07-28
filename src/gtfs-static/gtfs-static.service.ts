@@ -207,11 +207,13 @@ export class GtfsStaticService {
       );
 
       if (!fromCache) {
-        // Data actually changed — drop the cached stops/routes pages so
-        // clients see the update instead of serving up to a day of staleness.
+        // Data actually changed — drop the cached pages so clients see the
+        // update instead of serving up to a day of staleness.
         await Promise.all([
           this.cache.delByPrefix('gtfs:stops:'),
           this.cache.delByPrefix('gtfs:routes:'),
+          this.cache.delByPrefix('gtfs:trips:'),
+          this.cache.delByPrefix('gtfs:stop_times:'),
         ]);
       }
 
@@ -1084,21 +1086,36 @@ export class GtfsStaticService {
     limit = 100,
     offset = 0,
   ): Promise<PaginatedResult<typeof gtfsTrip.$inferSelect>> {
-    const baseQuery = this.db.select().from(gtfsTrip);
-    const countQuery = this.db.select({ total: count() }).from(gtfsTrip);
+    const cacheKey = `gtfs:trips:${routeId ?? 'all'}:${limit}:${offset}`;
+    return this.cache.getOrSet(
+      cacheKey,
+      async () => {
+        const baseQuery = this.db.select().from(gtfsTrip);
+        const countQuery = this.db.select({ total: count() }).from(gtfsTrip);
 
-    const [data, countResult] = await Promise.all([
-      routeId
-        ? baseQuery
-            .where(eq(gtfsTrip.routeId, routeId))
-            .limit(limit)
-            .offset(offset)
-        : baseQuery.limit(limit).offset(offset),
-      routeId ? countQuery.where(eq(gtfsTrip.routeId, routeId)) : countQuery,
-    ]);
+        const [data, countResult] = await Promise.all([
+          routeId
+            ? baseQuery
+                .where(eq(gtfsTrip.routeId, routeId))
+                .limit(limit)
+                .offset(offset)
+            : baseQuery.limit(limit).offset(offset),
+          routeId
+            ? countQuery.where(eq(gtfsTrip.routeId, routeId))
+            : countQuery,
+        ]);
 
-    const total = countResult[0]?.total ?? 0;
-    return { data, total, limit, offset, hasNextPage: offset + limit < total };
+        const total = countResult[0]?.total ?? 0;
+        return {
+          data,
+          total,
+          limit,
+          offset,
+          hasNextPage: offset + limit < total,
+        };
+      },
+      CacheTTL.GTFS_STATIC,
+    );
   }
 
   async getStopTimes(
@@ -1107,24 +1124,41 @@ export class GtfsStaticService {
     limit = 100,
     offset = 0,
   ): Promise<PaginatedResult<typeof gtfsStopTime.$inferSelect>> {
-    const baseQuery = this.db.select().from(gtfsStopTime);
-    const countQuery = this.db.select({ total: count() }).from(gtfsStopTime);
+    // Static schedule data (changes only on nightly ingest), but hit on
+    // every trackTrip() call — including every 15s poll for actively
+    // tracked trips via RealtimePollerService — so this is one of the
+    // hottest uncached reads in the app. Cache it like getStops/getRoutes.
+    const cacheKey = `gtfs:stop_times:${tripId ?? 'all'}:${stopId ?? 'all'}:${limit}:${offset}`;
+    return this.cache.getOrSet(
+      cacheKey,
+      async () => {
+        const baseQuery = this.db.select().from(gtfsStopTime);
+        const countQuery = this.db.select({ total: count() }).from(gtfsStopTime);
 
-    const filterClause = tripId
-      ? eq(gtfsStopTime.tripId, tripId)
-      : stopId
-        ? eq(gtfsStopTime.stopId, stopId)
-        : undefined;
+        const filterClause = tripId
+          ? eq(gtfsStopTime.tripId, tripId)
+          : stopId
+            ? eq(gtfsStopTime.stopId, stopId)
+            : undefined;
 
-    const [data, countResult] = await Promise.all([
-      filterClause
-        ? baseQuery.where(filterClause).limit(limit).offset(offset)
-        : baseQuery.limit(limit).offset(offset),
-      filterClause ? countQuery.where(filterClause) : countQuery,
-    ]);
+        const [data, countResult] = await Promise.all([
+          filterClause
+            ? baseQuery.where(filterClause).limit(limit).offset(offset)
+            : baseQuery.limit(limit).offset(offset),
+          filterClause ? countQuery.where(filterClause) : countQuery,
+        ]);
 
-    const total = countResult[0]?.total ?? 0;
-    return { data, total, limit, offset, hasNextPage: offset + limit < total };
+        const total = countResult[0]?.total ?? 0;
+        return {
+          data,
+          total,
+          limit,
+          offset,
+          hasNextPage: offset + limit < total,
+        };
+      },
+      CacheTTL.GTFS_STATIC,
+    );
   }
 
   async getStopsCount(mode?: string): Promise<number> {
